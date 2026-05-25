@@ -403,27 +403,129 @@ Result: Implemented, cleaned up, documented
 
 **Example:** `"Optimize the ESP32 firmware to prevent memory leaks and handle WiFi disconnects gracefully"`
 
-## Frontend Agent
+## Frontend Team (Next.js Web App)
 
-### 5. flutter-foundation (Riverpod + Testing + Navigation + UI)
+### 5. frontend-core (Next.js + App Router + Server/Client Components)
 
-**Triggers on:** `tankctl_app/lib/providers/`, `tankctl_app/lib/features/`, `tankctl_app/test/`
+**Triggers on:** `tankctl-web/app/`, `tankctl-web/src/pages/`
 
 **Responsibilities:**
-- Riverpod state management and providers
-- Widget and integration testing
-- GoRouter navigation and deep linking
-- Material Design 3 theming with Flex Color Scheme
-- MVVM pattern and separation of concerns
-- Reusable component library
+- Next.js App Router architecture and file structure
+- Server Component vs Client Component decision-making
+- Dynamic routes with `[id]` and `[...slug]` patterns
+- Middleware for authentication and routing
+- Image optimization with `next/image`
+- Font optimization and metadata management
+- Responsive design patterns
 
-**When active:** You're building UI features, setting up state management, or writing tests.
+**When active:** You're designing page layouts, routing structure, or determining Server/Client Component boundaries.
 
-**Example:** `"Create a Riverpod provider for device telemetry with caching"`
+**Example:** `"Design the /devices/[id] detail page with nested tabs using Server Components"`
 
-## Documentation Agent
+### 6. state-management (React Query + Zustand)
 
-### 6. docs-automation (Auto-Generated Documentation Sync)
+**Triggers on:** `tankctl-web/src/hooks/`, `tankctl-web/src/stores/`, `tankctl-web/lib/api/`
+
+**Responsibilities:**
+- React Query hooks for server-side data fetching and caching
+- Zustand stores for client-side UI state (auth, sidebar, theme)
+- Mutation patterns with optimistic updates
+- Cache invalidation strategies
+- Infinite queries for pagination
+- Real-time cache synchronization
+- Testing hooks and stores
+
+**When active:** You're fetching data, managing state, handling caching, or implementing optimistic updates.
+
+**Example:** `"Create a useDevices hook with React Query that filters by status and caches results"`
+
+### 7. ui-components (shadcn/ui + Tailwind CSS + Accessibility)
+
+**Triggers on:** `tankctl-web/src/components/`, `tankctl-web/styles/`
+
+**Responsibilities:**
+- shadcn/ui component composition and customization
+- Tailwind CSS responsive design and dark mode
+- WCAG accessibility compliance
+- Component testing with React Testing Library
+- Design system tokens and theming
+- Touch-friendly mobile interfaces (48px minimum)
+- Performance-optimized component patterns
+
+**When active:** You're building reusable UI components, styling, or ensuring accessibility.
+
+**Example:** `"Build a responsive device card component with hover states and touch support"`
+
+### 8. real-time-features (Socket.io + WebSocket + Live Updates)
+
+**Triggers on:** `tankctl-web/src/hooks/realtime/`, `tankctl-web/lib/socket-io/`
+
+**Responsibilities:**
+- Socket.io client setup and connection management
+- Live telemetry streaming and chart updates
+- WebSocket fallback to HTTP polling
+- Connection reliability with exponential backoff
+- Offline detection and sync on reconnect
+- Real-time cache updates via React Query
+- Connection status indicators
+
+**When active:** You're implementing live data updates, streaming telemetry, or handling real-time events.
+
+**Example:** `"Implement a live temperature chart that updates via Socket.io with fallback polling"`
+
+### 9. api-integration (Axios + Authentication + Error Handling)
+
+**Triggers on:** `tankctl-web/lib/api/`, `tankctl-web/src/lib/api-client.ts`
+
+**Responsibilities:**
+- Axios client configuration and interceptors
+- Type-safe API endpoint organization
+- Request/response transformation
+- Authentication token management and refresh
+- Error normalization and user-friendly messages
+- API contract enforcement
+- Mock APIs for testing
+
+**When active:** You're integrating FastAPI endpoints, managing authentication, or handling errors.
+
+**Example:** `"Design the API client layer for device endpoints with type-safe methods"`
+
+### 10. web-deployment (Docker + nginx + Production)
+
+**Triggers on:** `Dockerfile`, `nginx.conf`, `docker-compose.yml`, `.env`
+
+**Responsibilities:**
+- Multi-stage Docker builds for Next.js
+- nginx reverse proxy configuration
+- Environment variable management per environment
+- Next.js production optimization
+- SSL/TLS and security headers
+- Logging, monitoring, and health checks
+- Scaling and load balancing strategies
+
+**When active:** You're containerizing the app, configuring deployment, or optimizing production.
+
+**Example:** `"Configure Docker and nginx for production deployment with SSL"`
+
+## Utilities & Documentation
+
+### 11. code-cleanup (Dead Code Removal)
+
+**Triggers on:** All file types (Python, TypeScript, Dart, Arduino)
+
+**Responsibilities:**
+- Unused import removal across language (Python, TypeScript)
+- Orphaned function/component removal
+- Dead code branches and unreachable code
+- Duplicate logic consolidation
+- Flutter code removal (deprecated framework)
+- Safe preservation of public APIs and safety-critical code
+
+**When active:** You're post-feature cleaning up dead code, removing unused imports, or refactoring.
+
+**Example:** `"Remove unused Flutter files and clean up dead imports from the web app migration"`
+
+### 12. docs-automation (Auto-Generated Documentation Sync)
 
 **Triggers on:** Changes to `src/api/`, `firmware/`, `src/infrastructure/mqtt/`, `src/domain/`
 
@@ -445,14 +547,35 @@ Result: Implemented, cleaned up, documented
 These agents **automatically coordinate** through file patterns and shared architecture:
 
 ```
-flutter-foundation (UI Layer)
-        ↓ (calls via HTTP)
-backend-core (API Layer)
-        ↓ (delegates to)
-Services
-    ├─→ device-communication (MQTT, shadow, commands)
-    ├─→ notifications-and-alerts (FCM, alerts, reminders)
-    └─→ Repository & Infrastructure
+┌─────────────────────────────────────────────────────────────┐
+│                   Next.js Web App Frontend                   │
+│  frontend-core → state-management → ui-components           │
+│                      ↓                                        │
+│          real-time-features (Socket.io)                     │
+│                      ↓                                        │
+│          api-integration (Axios to FastAPI)                 │
+│                      ↓                                        │
+│           web-deployment (Docker + nginx)                   │
+└─────────────────────────────────────────────────────────────┘
+                            ↓ (HTTP/WebSocket)
+┌─────────────────────────────────────────────────────────────┐
+│                   FastAPI Backend                            │
+│         backend-core (REST API Layer)                       │
+│                      ↓                                        │
+│            Services Layer (Business Logic)                  │
+│      ├─→ device-communication (MQTT, shadow)               │
+│      ├─→ notifications-and-alerts (FCM, alerts)            │
+│      └─→ Repository & Infrastructure Layer                 │
+└─────────────────────────────────────────────────────────────┘
+                            ↓ (MQTT)
+┌─────────────────────────────────────────────────────────────┐
+│                  Device Hardware (ESP32)                     │
+│        esp32-firmware (Arduino/C++, MQTT client)           │
+└─────────────────────────────────────────────────────────────┘
+
+Coordination: planner → orchestrator → specialized agents
+Cleanup: code-cleanup (removes dead code post-feature)
+Docs: docs-automation (keeps ARCHITECTURE.md, COMMANDS.md in sync)
 ```
 
 ### How Agents Work
@@ -460,7 +583,8 @@ Services
 1. **User-Invocable**: All agents are explicitly invocable via slash commands
    - **Planning**: Type `/planner` to research, analyze, and create implementation plans
    - **Orchestration**: Type `/orchestrator` to coordinate multi-layer implementation
-   - **Domain experts**: `/backend-core`, `/device-communication`, `/esp32-firmware`, `/notifications-and-alerts`, `/flutter-foundation`
+   - **Backend**: `/backend-core`, `/device-communication`, `/esp32-firmware`, `/notifications-and-alerts`
+   - **Frontend (Web)**: `/frontend-core`, `/state-management`, `/ui-components`, `/real-time-features`, `/api-integration`, `/web-deployment`
    - **Utilities**: `/code-cleanup`, `/docs-automation`
 
 2. **Discovery via Descriptions**: Agent descriptions contain trigger phrases and domain keywords
@@ -494,11 +618,19 @@ Services
    - Type `/notifications-and-alerts Implement FCM delivery for water-low alert thresholds`
    - notifications-and-alerts handles notification logic
 
-3. Update UI to display alerts:
-   - Type `/flutter-foundation Create a Riverpod provider for alert state management`
-   - flutter-foundation handles state management and UI coordination
+3. Update web app to display alerts:
+   - Type `/frontend-core Design the alerts page with filtering and pagination`
+   - frontend-core handles page layout
 
-**Result**: Three coordinated layers, each handled by the right specialist agent.
+4. Add alert state management:
+   - Type `/state-management Create a useAlerts hook with React Query for live updates`
+   - state-management handles data fetching and caching
+
+5. Build alert UI components:
+   - Type `/ui-components Build an alert card component with severity indicators`
+   - ui-components handles component design and styling
+
+**Result**: Five coordinated layers, each handled by the right specialist agent.
 
 ---
 
@@ -516,11 +648,15 @@ Services
    - Type `/backend-core Design telemetry repository and aggregation queries`
    - backend-core handles API, database, and telemetry persistence
 
-4. Build monitoring UI:
-   - Type `/flutter-foundation Create real-time telemetry charts with Riverpod streaming`
-   - flutter-foundation handles UI state management and rendering performance
+4. Build monitoring dashboard:
+   - Type `/frontend-core Design the telemetry charts page with time-range filters`
+   - frontend-core handles page layout and routing
 
-**Result**: End-to-end telemetry pipeline with embedded robustness, reliable transport, and responsive UI.
+5. Create real-time telemetry visualization:
+   - Type `/real-time-features Implement live temperature chart with Socket.io and fallback polling`
+   - real-time-features handles WebSocket and cache synchronization
+
+**Result**: End-to-end telemetry pipeline with embedded robustness, reliable transport, and responsive web dashboard.
 
 ---
 
@@ -538,12 +674,20 @@ Services
    - Type `/backend-core Design pump control endpoint and device shadow updates`
    - Result: REST API endpoint with validation
 
-4. Build mobile UI:
-   - Type `/flutter-foundation Create pump toggle UI with Riverpod command state provider`
-   - Result: User-facing pump control interface
+4. Build web app control page:
+   - Type `/frontend-core Design the pump control page with status display and toggle button`
+   - Result: Next.js page with dynamic routing
 
-5. **Auto-sync documentation**:
-   - Type `/orchestrator` automatically invokes `/docs-automation` 
+5. Create pump control state management:
+   - Type `/state-management Create a usePumpControl hook with React Query mutations`
+   - Result: Type-safe hook with optimistic updates and error handling
+
+6. Build pump control UI components:
+   - Type `/ui-components Build pump toggle component with loading and error states`
+   - Result: Accessible, responsive component with Tailwind styling
+
+7. **Auto-sync documentation**:
+   - Type `/docs-automation Update docs for the new pump control endpoints`
    - **Automatically generates**:
      - COMMANDS.md: Pump control endpoint + payload schema
      - MQTT_TOPICS.md: tankctl/{device_id}/pump_status topic
@@ -575,13 +719,16 @@ Services
      1. esp32-firmware: ADC reading + smoothing
      2. device-communication: Telemetry topic patterns
      3. backend-core: Alert service + API endpoints
-     4. flutter-foundation: Water level gauge UI
-     5. code-cleanup: Remove test code
-     6. docs-automation: Update all docs
+     4. state-management: Alert state + React Query hooks
+     5. ui-components: Alert components + sensor gauge
+     6. frontend-core: Alert page with filters
+     7. real-time-features: Live sensor updates
+     8. code-cleanup: Remove test code
+     9. docs-automation: Update all docs
 
 3. **Result:**
    - ✅ Plan prevents mistakes before coding
-   - ✅ Clear dependency sequencing (esp32 firmware first, then backend, then UI)
+   - ✅ Clear dependency sequencing (esp32 firmware first, then backend, then web UI)
    - ✅ All edge cases identified and mitigated
    - ✅ Estimated time accurate and tracked
    - ✅ Complete end-to-end feature

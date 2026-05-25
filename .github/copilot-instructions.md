@@ -18,29 +18,73 @@ Key rules:
 
 Devices communicate using MQTT and follow DEVICE_PROTOCOL.md.
 
-## Specialized Agents
+## Specialized Agents - Team-Based Organization
 
-TankCtl has four **user-invocable specialized agents** that you can explicitly request for deep domain expertise:
+TankCtl uses a **team-based agent structure** for the Next.js web app and FastAPI backend.
 
-### Backend Agents
+### 🌐 Web App Team (Next.js, React, TypeScript)
 
-1. **backend-core** — FastAPI + SQLAlchemy + Repository pattern
+1. **frontend-core** — Next.js pages, App Router, Server/Client Components
+   - Use for: Page design, routing architecture, layout structure, performance
+   - Command: `/frontend-core Design the /devices/[id] detail page with nested tabs`
+
+2. **state-management** — React Query (server state) + Zustand (client state)
+   - Use for: Data fetching patterns, caching, real-time subscriptions
+   - Command: `/state-management Create a useDevices hook with React Query and filters`
+
+3. **ui-components** — shadcn/ui + Tailwind CSS + accessibility
+   - Use for: Component design, responsive layouts, WCAG compliance, design system
+   - Command: `/ui-components Build a responsive device card component with hover states`
+
+4. **real-time-features** — Socket.io, WebSocket, live telemetry
+   - Use for: Live data streaming, connection reliability, cache synchronization
+   - Command: `/real-time-features Implement live temperature chart with Socket.io`
+
+5. **api-integration** — Axios client, FastAPI integration, authentication
+   - Use for: API design, request/response handling, error strategies, types
+   - Command: `/api-integration Design the API client layer for device endpoints`
+
+6. **web-deployment** — Docker, nginx, environment management, production
+   - Use for: Containerization, reverse proxy, environment config, monitoring
+   - Command: `/web-deployment Configure Docker and nginx for production deployment`
+
+### 🔌 Backend Team (FastAPI, Python)
+
+7. **backend-core** — FastAPI + SQLAlchemy + Repository pattern
    - Use for: REST endpoint design, database models, repository implementations
-   - Command: `/backend-core Design a new API endpoint for...`
+   - Command: `/backend-core Design a new alert service endpoint`
 
-2. **device-communication** — MQTT + Device Shadow + Commands
-   - Use for: MQTT topics, shadow reconciliation, device protocol, firmware
-   - Command: `/device-communication Implement device shadow reconciliation for...`
+8. **device-communication** — MQTT + Device Shadow + Commands
+   - Use for: Device protocol, shadow reconciliation, firmware integration
+   - Command: `/device-communication Implement device shadow reconciliation for pump control`
 
-3. **notifications-and-alerts** — FCM + Alerts + Water Scheduling
-   - Use for: FCM integration, alert rules, reminder scheduling, notification preferences
-   - Command: `/notifications-and-alerts Implement water-low alert thresholds and FCM delivery`
+9. **notifications-and-alerts** — FCM + Alerts + Water Scheduling
+   - Use for: FCM integration, alert rules, reminder scheduling
+   - Command: `/notifications-and-alerts Implement water-low alert thresholds`
 
-### Frontend Agent
+### 🛠️ Firmware Team (Arduino, C++)
 
-4. **flutter-foundation** — Riverpod + Testing + Navigation + UI
-   - Use for: State management, widget testing, navigation, theming, component library
-   - Command: `/flutter-foundation Create a Riverpod provider for device telemetry`
+10. **esp32-firmware** — ESP32, Arduino, MQTT client, hardware control
+    - Use for: Firmware development, GPIO control, memory optimization, reliability
+    - Command: `/esp32-firmware Optimize pump control relay logic for stability`
+
+### 📋 Utilities & Coordination
+
+11. **planner** — Research, analysis, deep planning before implementation
+    - Use for: Complex multi-layer features, architecture decisions, roadmaps
+    - Command: `/planner Plan water-level sensor feature end-to-end`
+
+12. **orchestrator** — Multi-agent coordination, task sequencing
+    - Use for: Multi-layer features requiring multiple agents
+    - Command: `/orchestrator Build complete pump control feature (firmware, API, UI)`
+
+13. **code-cleanup** — Dead code removal, refactoring, removing unused code
+    - Use for: Post-feature cleanup, removing dead Flutter code, TypeScript/Python cleanup
+    - Command: `/code-cleanup Remove unused Flutter files and clean up dead imports`
+
+14. **docs-automation** — Auto-sync code changes to documentation
+    - Use for: Keep ARCHITECTURE.md, MQTT_TOPICS.md, COMMANDS.md in sync
+    - Command: `/docs-automation Update docs for the new pump control endpoints`
 
 ## How to Use Agents
 
@@ -49,10 +93,17 @@ TankCtl has four **user-invocable specialized agents** that you can explicitly r
 - Each agent has specialized knowledge for its domain
 - Agents understand TankCtl architecture and coordinate across layers
 
-**Example workflow:** When implementing a water alert:
-1. `/backend-core` → Design alert service and repository
-2. `/notifications-and-alerts` → Implement FCM delivery
-3. `/flutter-foundation` → Build alert UI with Riverpod providers
+**Example workflow:** When implementing a new device feature:
+1. `/planner` → Research architecture, create implementation roadmap
+2. `/backend-core` → Design FastAPI endpoint and database schema
+3. `/device-communication` → Define MQTT topic and device protocol
+4. `/esp32-firmware` → Implement hardware control in firmware
+5. `/frontend-core` + `/state-management` → Build Next.js pages and API integration
+6. `/ui-components` → Refine responsive design and accessibility
+7. `/real-time-features` → Add live telemetry updates
+8. `/web-deployment` → Prepare production Docker build
+9. `/docs-automation` → Update all documentation
+10. `/code-cleanup` → Remove any dead code from the migration
 
 See `agents.md` for detailed patterns and architecture.
 
