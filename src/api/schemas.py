@@ -454,3 +454,80 @@ class DeviceDetailResponse(BaseModel):
     temp_threshold_high: Optional[float] = None
     light_schedule: Optional[LightScheduleResponse] = None
     water_schedules: list[WaterScheduleResponse] = Field(default_factory=list)
+
+
+# ============================================================================
+# Relay Configuration Schemas
+# ============================================================================
+
+class RelayConfigRequest(BaseModel):
+    """Request to create or update relay configuration."""
+
+    model_config = {"str_strip_whitespace": True}
+
+    relay_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        pattern=r"^[a-zA-Z0-9_]+$",
+        description="Logical relay identifier (e.g., 'light', 'pump', 'heater')",
+        examples=["light", "pump", "heater", "fan"]
+    )
+
+    gpio_pin: int = Field(
+        ...,
+        ge=0,
+        le=39,
+        description="GPIO pin number on ESP32 (0-39)"
+    )
+
+    active_level: Literal["LOW", "HIGH"] = Field(
+        "LOW",
+        description="Logic level for relay activation: 'LOW' (active-low) or 'HIGH' (active-high)"
+    )
+
+    default_state: Literal["on", "off"] = Field(
+        "off",
+        description="Safe default state on device boot"
+    )
+
+
+class RelayConfigResponse(BaseModel):
+    """Response with relay configuration details."""
+
+    relay_name: str = Field(
+        ...,
+        description="Logical relay identifier"
+    )
+
+    gpio_pin: int = Field(
+        ...,
+        description="GPIO pin number on ESP32"
+    )
+
+    active_level: Literal["LOW", "HIGH"] = Field(
+        ...,
+        description="Logic level for relay activation"
+    )
+
+    default_state: Literal["on", "off"] = Field(
+        ...,
+        description="Safe default state on device boot"
+    )
+
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class DeviceRelayConfigResponse(BaseModel):
+    """Response with all relay configurations for a device."""
+
+    device_id: str
+    relays: Dict[str, RelayConfigResponse] = Field(
+        ...,
+        description="Dictionary mapping relay_name to RelayConfigResponse"
+    )
+    count: int = Field(
+        ...,
+        description="Total number of configured relays"
+    )
