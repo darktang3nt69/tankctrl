@@ -4,6 +4,7 @@ import 'package:tankctl_app/domain/device_detail.dart';
 import 'package:tankctl_app/providers/device_detail_provider.dart';
 import 'package:tankctl_app/providers/event_provider.dart';
 import 'package:tankctl_app/widgets/event_card.dart';
+import 'package:tankctl_app/features/relay_config/relay_config_screen.dart';
 import 'device_detail_sections.dart';
 
 /// Device detail screen showing all settings in one scrollable view
@@ -61,6 +62,29 @@ class TankDetailScreen extends ConsumerWidget {
 
             // Light Schedule
             LightScheduleSection(device: device, deviceId: deviceId),
+            const SizedBox(height: 24),
+
+            // Pump Control
+            PumpToggleSection(deviceId: deviceId),
+            const SizedBox(height: 24),
+
+            // Relay Configuration Link
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Card(
+                child: ListTile(
+                  leading: const Icon(Icons.router),
+                  title: const Text('Relay Configuration'),
+                  subtitle: const Text('Manage GPIO pin mappings'),
+                  trailing: const Icon(Icons.arrow_forward),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => RelayConfigScreen(deviceId: deviceId),
+                    ),
+                  ),
+                ),
+              ),
+            ),
             const SizedBox(height: 24),
 
             // Water Schedules (Inline form)
