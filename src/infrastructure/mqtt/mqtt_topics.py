@@ -48,6 +48,11 @@ class MQTTTopics:
         """Get status/warning topic for a device."""
         return f"tankctl/{device_id}/status"
 
+    @staticmethod
+    def config_topic(device_id: str) -> str:
+        """Get configuration topic for a device."""
+        return f"tankctl/{device_id}/config"
+
     # Wildcard subscriptions for backend
     SUBSCRIBE_TELEMETRY = "tankctl/+/telemetry"
     SUBSCRIBE_REPORTED  = "tankctl/+/reported"

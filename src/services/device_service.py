@@ -114,6 +114,16 @@ class DeviceService:
         except Exception as e:
             logger.warning("failed_to_create_default_schedule", device_id=device_id, error=str(e))
 
+        # Create default relay configurations (light:D4, pump:D12)
+        try:
+            from src.services.relay_config_service import RelayConfigService
+            
+            relay_service = RelayConfigService(self.session)
+            relay_service.register_default_relays(device_id)
+            logger.info("default_relay_configs_created", device_id=device_id)
+        except Exception as e:
+            logger.warning("failed_to_create_default_relay_configs", device_id=device_id, error=str(e))
+
         logger.info("device_registered", device_id=device_id)
         
         # Publish device_registered event
