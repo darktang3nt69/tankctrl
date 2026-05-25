@@ -28,6 +28,90 @@ class CommandService:
         self.session = session or db.get_session()
         self.repo = CommandRepository(self.session)
 
+    def _extract_relay_name(self, command: str) -> Optional[str]:
+        """
+        Extract relay name from command.
+
+        Command patterns:
+        - "set_pump" -> "pump"
+        - "set_light" -> "light"
+        - "set_relay_heater" -> "heater"
+
+        Args:
+            command: Command name
+
+        Returns:
+            Relay name or None if not a relay command
+        """
+        if command.startswith("set_"):
+            relay_part = command[4:]  # Remove "set_" prefix
+            
+            # Handle "set_relay_<name>" format
+            if relay_part.startswith("relay_"):
+                return relay_part[6:]  # Remove "relay_" prefix
+            
+            # Handle "set_<name>" format directly (pump, light, etc.)
+            return relay_part
+        
+        return None
+
+    def _validate_relay_command(
+        self,
+        device_id: str,
+        command: str,
+        value: Optional[str],
+    ) -> None:
+        """
+        Validate a relay-based command (set_pump, set_light, set_relay_*).
+
+        Args:
+            device_id: Target device ID
+            command: Command name
+            value: Command value ("on" or "off")
+
+        Raises:
+            ValueError: If validation fails
+        """
+        # Only validate relay commands
+        relay_name = self._extract_relay_name(command)
+        if not relay_name:
+            return
+        
+        # Validate value is "on" or "off"
+        if value not in ("on", "off"):
+            raise ValueError(
+                f"Invalid relay value: {value}. Must be 'on' or 'off' for relay {relay_name}"
+            )
+        
+        # Validate relay exists for this device
+        try:
+            from src.services.relay_config_service import RelayConfigService
+            
+            relay_config_service = RelayConfigService(self.session)
+            relay_config = relay_config_service.get_device_relay_config(device_id)
+            
+            if relay_name not in relay_config:
+                raise ValueError(
+                    f"Relay '{relay_name}' not found for device {device_id}"
+                )
+            
+            logger.debug(
+                "relay_command_validated",
+                device_id=device_id,
+                relay_name=relay_name,
+                value=value,
+            )
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(
+                "relay_validation_failed",
+                device_id=device_id,
+                relay_name=relay_name,
+                error=str(e),
+            )
+            raise ValueError(f"Failed to validate relay for device {device_id}: {str(e)}")
+
     def send_command(
         self,
         device_id: str,
@@ -43,7 +127,7 @@ class CommandService:
 
         Args:
             device_id: Target device ID
-            command: Command name (e.g., 'set_light', 'reboot_device')
+            command: Command name (e.g., 'set_light', 'set_pump', 'reboot_device')
             value: Optional command parameter
             version: Optional version number (auto-incremented if not provided)
             metadata: Optional metadata dictionary (e.g., for firmware updates: {url, version, checksum})
@@ -52,6 +136,7 @@ class CommandService:
             Created command
 
         Raises:
+            ValueError: If command validation fails
             Exception: If command sending fails
         """
         logger.info(
@@ -61,11 +146,17 @@ class CommandService:
         )
 
         try:
+            # Validate relay-based commands
+            self._validate_relay_command(device_id, command, value)
+
             # Use provided version or auto-increment
             if version is None:
                 # Get highest version + 1
                 latest = self.repo.get_latest_for_device(device_id, limit=1)
                 version = (latest[0].version + 1) if latest else 1
+
+            # Extract relay name for logging (optional)
+            relay_name = self._extract_relay_name(command)
 
             # Create command domain model
             cmd = Command(
@@ -97,10 +188,19 @@ class CommandService:
                 if updated:
                     cmd = updated
 
+            # Enhanced logging with relay name if applicable
+            log_data = {
+                "device_id": device_id,
+                "command": command,
+                "version": version,
+            }
+            if relay_name:
+                log_data["relay_name"] = relay_name
+                log_data["value"] = value
+
             logger.info(
                 "command_sent",
-                device_id=device_id,
-                command=command,
+                **log_data
             )
             
             # Publish command_sent event
@@ -114,6 +214,14 @@ class CommandService:
 
             return cmd
 
+        except ValueError as e:
+            logger.error(
+                "command_validation_failed",
+                device_id=device_id,
+                command=command,
+                error=str(e),
+            )
+            raise
         except Exception as e:
             logger.error(
                 "command_send_failed",
