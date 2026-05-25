@@ -94,7 +94,7 @@ class DeviceService:
 
         registered = self.device_repo.create(device)
 
-        # Create associated shadow
+        # Create associated shadow (initially empty, will be populated after relays are registered)
         shadow = DeviceShadow(device_id=device_id)
         self.shadow_repo.create(shadow)
         
@@ -119,12 +119,31 @@ class DeviceService:
             from src.services.relay_config_service import RelayConfigService
             
             relay_service = RelayConfigService(self.session)
-            relay_service.register_default_relays(device_id)
-            logger.info("default_relay_configs_created", device_id=device_id)
+            created_relays = relay_service.register_default_relays(device_id)
+            logger.info("default_relay_configs_created", device_id=device_id, count=len(created_relays))
+            
+            # Initialize shadow with multi-relay state
+            # Set all relays to their default states (typically "off" for safety)
+            if created_relays:
+                initial_desired_state = {}
+                for relay in created_relays:
+                    initial_desired_state[relay.relay_name] = relay.default_state
+                
+                # Update shadow with initial desired state
+                shadow.update_desired(initial_desired_state)
+                self.shadow_repo.update(shadow)
+                
+                logger.info(
+                    "shadow_initialized_with_relays",
+                    device_id=device_id,
+                    relays=list(initial_desired_state.keys()),
+                    initial_state=initial_desired_state,
+                    version=shadow.version,
+                )
         except Exception as e:
             logger.warning("failed_to_create_default_relay_configs", device_id=device_id, error=str(e))
 
-        logger.info("device_registered", device_id=device_id)
+        logger.info("device_registered", device_id=device_id, relay_count=len(created_relays) if created_relays else 0)
         
         # Publish device_registered event
         event = device_registered_event(device_id=device_id)
