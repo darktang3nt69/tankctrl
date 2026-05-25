@@ -201,3 +201,25 @@ class DevicePushTokenModel(Base):
         return (
             f"<DevicePushToken(device_id={self.device_id}, platform={self.platform}, last_seen={self.last_seen})>"
         )
+
+
+class RelayConfigModel(Base):
+    """Relay configuration table model for GPIO pin mapping and state control."""
+
+    __tablename__ = "device_relay_config"
+    __table_args__ = (
+        UniqueConstraint("device_id", "relay_name", name="uq_relay_name_per_device"),
+        UniqueConstraint("device_id", "gpio_pin", name="uq_gpio_pin_per_device"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(String(50), nullable=False, index=True)
+    relay_name = Column(String(50), nullable=False)  # e.g., "light", "pump"
+    gpio_pin = Column(Integer, nullable=False)  # ESP32 GPIO (0-39)
+    active_level = Column(String(10), nullable=False, default="LOW")  # "LOW" or "HIGH"
+    default_state = Column(String(10), nullable=False, default="off")  # "on" or "off"
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<RelayConfigModel(device_id={self.device_id}, relay_name={self.relay_name}, gpio_pin={self.gpio_pin})>"

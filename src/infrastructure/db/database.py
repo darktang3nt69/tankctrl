@@ -18,6 +18,7 @@ from src.infrastructure.db.models import (
     WaterScheduleModel,
     WarningAcknowledgementModel,
     DevicePushTokenModel,
+    RelayConfigModel,
 )
 from src.utils.logger import get_logger
 
@@ -71,6 +72,7 @@ class Database:
                     WaterScheduleModel.__table__,
                     WarningAcknowledgementModel.__table__,
                     DevicePushTokenModel.__table__,
+                    RelayConfigModel.__table__,
                 ],
             )
             self._init_timescale_schema()
