@@ -195,6 +195,9 @@ def set_light(
         
     except HTTPException:
         raise
+    except ValueError as e:
+        logger.warning("set_light_validation_error", device_id=device_id, error=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("set_light_error", device_id=device_id, error=str(e))
         raise HTTPException(status_code=500, detail="Failed to set light")
@@ -255,6 +258,9 @@ def set_pump(
         
     except HTTPException:
         raise
+    except ValueError as e:
+        logger.warning("set_pump_validation_error", device_id=device_id, error=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("set_pump_error", device_id=device_id, error=str(e))
         raise HTTPException(status_code=500, detail="Failed to set pump")
