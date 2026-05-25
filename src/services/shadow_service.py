@@ -32,9 +32,15 @@ class ShadowService:
         Reconcile device shadow.
 
         If desired != reported, sends a command to bring device into desired state.
+        
+        Handles multi-relay reconciliation: for each key in desired state,
+        if it differs from reported state, sends a command.
 
         Args:
             device_id: Device ID to reconcile
+
+        Returns:
+            Updated shadow or None if not found
         """
         logger.debug("shadow_reconciliation_started", device_id=device_id)
 
@@ -46,7 +52,7 @@ class ShadowService:
 
             # Check if already synchronized
             if shadow.is_synchronized():
-                logger.debug("shadow_already_synchronized", device_id=device_id)
+                logger.debug("shadow_already_synchronized", device_id=device_id, version=shadow.version)
                 return shadow
 
             # Get delta between desired and reported
@@ -58,6 +64,8 @@ class ShadowService:
             logger.info(
                 "shadow_reconciliation_needed",
                 device_id=device_id,
+                version=shadow.version,
+                delta_keys=list(delta.keys()),
                 delta=delta,
             )
             
@@ -71,24 +79,38 @@ class ShadowService:
 
             command_service = CommandService(self.session)
 
-            for key, desired_value in delta.items():
-                command_name = f"set_{key}"
+            # Send command for each mismatched relay
+            for relay_name, desired_value in delta.items():
+                command_name = f"set_{relay_name}"
                 command_value = str(desired_value)
 
-                command_service.send_command(
-                    device_id=device_id,
-                    command=command_name,
-                    value=command_value,
-                )
+                try:
+                    command_service.send_command(
+                        device_id=device_id,
+                        command=command_name,
+                        value=command_value,
+                        version=shadow.version + 1,
+                    )
 
-                logger.debug(
-                    "shadow_delta_command_sent",
-                    device_id=device_id,
-                    key=key,
-                    desired=desired_value,
-                    reported=shadow.reported.get(key),
-                    command=command_name,
-                )
+                    logger.info(
+                        "shadow_delta_command_sent",
+                        device_id=device_id,
+                        relay_name=relay_name,
+                        desired=desired_value,
+                        reported=shadow.reported.get(relay_name),
+                        command=command_name,
+                        version=shadow.version + 1,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "shadow_delta_command_failed",
+                        device_id=device_id,
+                        relay_name=relay_name,
+                        command=command_name,
+                        error=str(e),
+                    )
+                    # Continue with other relays even if one fails
+                    continue
 
             return shadow
 
@@ -105,54 +127,96 @@ class ShadowService:
         Handle reported state update from device.
 
         Updates the reported state in shadow and checks for reconciliation.
+        
+        For multi-relay devices, tracks state changes for all relays.
 
         Args:
             device_id: Device ID
-            reported_state: Reported state from device
+            reported_state: Reported state from device (e.g., {"light": "on", "pump": "off"})
 
         Returns:
             Updated shadow or None if not found
         """
-        logger.debug("handling_reported_state", device_id=device_id)
+        logger.debug("handling_reported_state", device_id=device_id, reported_state=reported_state)
 
         try:
             # Get old state before updating
             old_shadow = self.shadow_repo.get_by_device_id(device_id)
-            old_light_state = old_shadow.reported.get("light") if old_shadow else None
+            old_reported = old_shadow.reported if old_shadow else {}
             
             # Update reported state
             shadow = self.shadow_repo.update_reported(device_id, reported_state)
             if shadow:
-                was_drifted = not shadow.is_synchronized() or (shadow.desired != reported_state)
-                
                 logger.debug(
                     "shadow_reported_state_updated",
                     device_id=device_id,
                     synchronized=shadow.is_synchronized(),
+                    version=shadow.version,
                 )
                 
-                # Publish light_state_changed event if light state actually changed
-                new_light_state = reported_state.get("light")
-                if new_light_state and new_light_state != old_light_state:
+                # Check for state changes in any relay
+                state_changes = {}
+                for relay_name, new_state in reported_state.items():
+                    old_state = old_reported.get(relay_name)
+                    if new_state != old_state:
+                        state_changes[relay_name] = {
+                            "from": old_state,
+                            "to": new_state,
+                        }
+                        
+                        logger.info(
+                            "relay_state_changed",
+                            device_id=device_id,
+                            relay_name=relay_name,
+                            from_state=old_state,
+                            to_state=new_state,
+                        )
+                
+                # Publish relay_state_changed event for each changed relay
+                if state_changes:
+                    # Maintain backward compatibility with light_state_changed
+                    if "light" in state_changes:
+                        event = Event(
+                            event="light_state_changed",
+                            device_id=device_id,
+                            metadata={
+                                "light": state_changes["light"]["to"],
+                                "_from_reconciliation": False,
+                            }
+                        )
+                        event_publisher.publish(event)
+                        logger.info(
+                            "light_state_changed_event_published",
+                            device_id=device_id,
+                            light=state_changes["light"]["to"]
+                        )
+                    
+                    # Publish generic relay_state_changed events for all relays
                     event = Event(
-                        event="light_state_changed",
+                        event="relay_state_changed",
                         device_id=device_id,
                         metadata={
-                            "light": new_light_state,
-                            "_from_reconciliation": False,
+                            "changes": {
+                                relay: change["to"] 
+                                for relay, change in state_changes.items()
+                            }
                         }
                     )
                     event_publisher.publish(event)
-                    logger.info("light_state_changed_event_published", device_id=device_id, light=new_light_state)
                 
                 # Check if shadow just became synchronized
                 if shadow.is_synchronized():
-                    # Publish shadow_synchronized event
                     event = shadow_synchronized_event(
                         device_id=device_id,
                         version=shadow.version,
                     )
                     event_publisher.publish(event)
+                    logger.info(
+                        "shadow_synchronized_event_published",
+                        device_id=device_id,
+                        version=shadow.version,
+                    )
+                    
             return shadow
         except Exception as e:
             logger.error("handle_reported_state_failed", device_id=device_id, error=str(e))
