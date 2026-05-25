@@ -121,85 +121,101 @@ class TankCardMetricsRow extends StatelessWidget {
     super.key,
     required this.latestTemp,
     required this.tempHigh,
-    required this.lightOn,
-    required this.onToggleLight,
+    this.lightOn,
   });
 
   final double? latestTemp;
   final bool tempHigh;
-  final bool lightOn;
-  final ValueChanged<bool> onToggleLight;
+  final bool? lightOn;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Temp',
-              style: textTheme.labelSmall?.copyWith(
-                color: Colors.white38,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              latestTemp != null ? '${latestTemp!.toStringAsFixed(1)}°C' : '--',
-              style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.bold,
-                color: tempHigh ? TankCtlColors.temperature : Colors.white,
-                letterSpacing: -1,
-                height: 1,
-              ),
-            ),
-          ],
-        ),
-        const Spacer(),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              'Light',
-              style: textTheme.labelSmall?.copyWith(
-                color: Colors.white38,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  lightOn ? 'ON' : 'OFF',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: lightOn ? TankCtlColors.warning : Colors.white38,
-                  ),
+        // Temperature block
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'TEMP',
+                style: textTheme.labelSmall?.copyWith(
+                  color: Colors.white38,
+                  letterSpacing: 0.8,
+                  fontSize: 10,
                 ),
-                const SizedBox(width: 2),
-                GestureDetector(
-                  onTap: () {},
-                  behavior: HitTestBehavior.opaque,
-                  child: Transform.scale(
-                    scale: 0.75,
-                    alignment: Alignment.centerRight,
-                    child: Switch(
-                      value: lightOn,
-                      onChanged: onToggleLight,
-                      activeThumbColor: TankCtlColors.warning,
-                    ),
-                  ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                latestTemp != null
+                    ? '${latestTemp!.toStringAsFixed(1)}°C'
+                    : '--',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color:
+                      tempHigh ? TankCtlColors.temperature : Colors.white,
+                  letterSpacing: -0.5,
+                  height: 1,
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
+        // Light status chip
+        if (lightOn != null) _LightStatusChip(lightOn: lightOn!),
       ],
+    );
+  }
+}
+
+class _LightStatusChip extends StatelessWidget {
+  const _LightStatusChip({required this.lightOn});
+
+  final bool lightOn;
+
+  static const _amber = Color(0xFFFFD54F);
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: lightOn
+            ? _amber.withValues(alpha: 0.14)
+            : Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: lightOn
+              ? _amber.withValues(alpha: 0.55)
+              : Colors.white.withValues(alpha: 0.14),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            lightOn ? Icons.light_mode_rounded : Icons.light_mode_outlined,
+            size: 13,
+            color: lightOn ? _amber : Colors.white38,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            lightOn ? 'On' : 'Off',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: lightOn ? _amber : Colors.white38,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -210,7 +226,6 @@ class TankCardFooter extends StatelessWidget {
   final String? warningCode;
   final DateTime? lastSeen;
   final VoidCallback? onAcknowledgeWarning;
-  final String? deviceWarning;
 
   const TankCardFooter({
     super.key,
@@ -218,7 +233,6 @@ class TankCardFooter extends StatelessWidget {
     required this.warningCode,
     required this.lastSeen,
     required this.onAcknowledgeWarning,
-    this.deviceWarning,
   });
 
   @override
@@ -228,7 +242,6 @@ class TankCardFooter extends StatelessWidget {
       children: [
         TankStatusChip(
           status: status,
-          deviceWarning: deviceWarning,
         ),
         if (warningCode != null) ...[
           const SizedBox(width: 6),

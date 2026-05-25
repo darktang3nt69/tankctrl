@@ -97,6 +97,7 @@ int scheduleOnMinute = 0;
 int scheduleOffHour = 6;
 int scheduleOffMinute = 0;
 bool scheduleEnabled = false;
+bool lastAppliedLightWindowState = false;  // Track last applied window state for idempotency
 
 unsigned long lastTelemetryMs = 0;
 unsigned long lastHeartbeatMs = 0;
@@ -221,6 +222,10 @@ void setup() {
     if (!deviceRegistered) {
       registerDevice();
     }
+    
+    // Always try to sync schedule from API (even if registration failed)
+    // This ensures we get the latest schedule even during partial outages
+    syncScheduleFromAPI();
   }
   
   // Synchronize time
@@ -232,6 +237,29 @@ void setup() {
   timeClient.begin();
   Serial.println("Synchronizing time with NTP...");
   timeClient.update();
+  
+  // Apply initial scheduled light state after NTP sync completes
+  // This handles boot-time recovery: if device boots within a scheduled lighting window,
+  // lights will be turned ON immediately rather than waiting for the exact minute match.
+  Serial.println("\n[Boot] Applying initial scheduled light state after NTP sync...");
+  Serial.print("[Boot] scheduleEnabled=");
+  Serial.print(scheduleEnabled ? "true" : "false");
+  Serial.print(" on=");
+  Serial.print(scheduleOnHour);
+  Serial.print(":");
+  Serial.print(scheduleOnMinute);
+  Serial.print(" off=");
+  Serial.print(scheduleOffHour);
+  Serial.print(":");
+  Serial.println(scheduleOffMinute);
+  Serial.print("[Boot] Current time: ");
+  Serial.print(timeClient.getHours());
+  Serial.print(":");
+  Serial.println(timeClient.getMinutes());
+  
+  // Force re-evaluation by resetting the idempotency tracker
+  lastAppliedLightWindowState = !isCurrentTimeInLightingWindow();  // Invert to force first application
+  applyScheduledLightState();
   
   // Connect MQTT
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
@@ -515,6 +543,9 @@ void handleSetSchedule(JsonDocument& doc) {
   scheduleOffMinute = offMinute;
   scheduleEnabled = true;
   
+  // Reset window state tracker so applyScheduledLightState() will re-evaluate
+  lastAppliedLightWindowState = false;
+  
   // Save to EEPROM
   saveSchedule();
 
@@ -522,6 +553,10 @@ void handleSetSchedule(JsonDocument& doc) {
   Serial.print(onTime);
   Serial.print(", OFF ");
   Serial.println(offTime);
+  
+  // Apply new schedule immediately
+  Serial.println("Applying new schedule...");
+  applyScheduledLightState();
   
   publishReportedState();
 }
@@ -657,30 +692,66 @@ void publishReportedState() {
   Serial.println(lightState ? "on" : "off");
 }
 
-// ===== SCHEDULER =====
-void runSchedule() {
+// ===== LIGHTING WINDOW LOGIC =====
+bool isCurrentTimeInLightingWindow() {
   if (!scheduleEnabled) {
-    return;
+    return false;
   }
   
   int currentHour = timeClient.getHours();
   int currentMinute = timeClient.getMinutes();
   
-  // Check if it's time to turn light on
-  if (currentHour == scheduleOnHour && currentMinute == scheduleOnMinute) {
-    if (!lightState) {
-      setLight(true);
-      publishReportedState();
-    }
-  }
+  // Convert to minutes since midnight for easier range checking
+  int currentTime = currentHour * 60 + currentMinute;
+  int onTime = scheduleOnHour * 60 + scheduleOnMinute;
+  int offTime = scheduleOffHour * 60 + scheduleOffMinute;
   
-  // Check if it's time to turn light off
-  if (currentHour == scheduleOffHour && currentMinute == scheduleOffMinute) {
-    if (lightState) {
-      setLight(false);
-      publishReportedState();
+  // Case 1: Normal schedule (on-time before off-time, e.g., 18:00 to 06:00 wrapped)
+  // Check if current time is >= on-time AND <= off-time
+  if (onTime <= offTime) {
+    return currentTime >= onTime && currentTime <= offTime;
+  }
+  // Case 2: Wrap-around schedule (e.g., 18:00 to 06:00 next day)
+  // Light is ON from on-time to 23:59 OR from 00:00 to off-time
+  else {
+    return currentTime >= onTime || currentTime <= offTime;
+  }
+}
+
+// Apply scheduled light state, respecting idempotency
+void applyScheduledLightState() {
+  bool shouldBeLit = isCurrentTimeInLightingWindow();
+  
+  // Only log and change state if the window status has changed
+  if (shouldBeLit != lastAppliedLightWindowState) {
+    lastAppliedLightWindowState = shouldBeLit;
+    
+    if (shouldBeLit) {
+      Serial.println("[Schedule] APPLY: Lights should be ON (within window)");
+      if (!lightState) {
+        Serial.println("[Schedule] Turning relay ON");
+        setLight(true);
+        publishReportedState();
+      } else {
+        Serial.println("[Schedule] Lights already ON, no change");
+      }
+    } else {
+      Serial.println("[Schedule] APPLY: Lights should be OFF (outside window)");
+      if (lightState) {
+        Serial.println("[Schedule] Turning relay OFF");
+        setLight(false);
+        publishReportedState();
+      } else {
+        Serial.println("[Schedule] Lights already OFF, no change");
+      }
     }
   }
+  // No logging when state hasn't changed - this eliminates spam
+}
+
+// ===== SCHEDULER =====
+void runSchedule() {
+  applyScheduledLightState();
 }
 
 // ===== EEPROM FUNCTIONS =====
@@ -799,38 +870,37 @@ void registerDevice() {
   Serial.print(":");
   Serial.println(REGISTRATION_PORT);
   
-  // Build JSON payload
+  // Build JSON payload using bounded buffer
+  static char payload[256];
   StaticJsonDocument<128> requestDoc;
   requestDoc["device_id"] = tankId;
+  serializeJson(requestDoc, payload, sizeof(payload));
   
-  String payload;
-  serializeJson(requestDoc, payload);
-  
-  // Send HTTP POST request
-  String request = "POST ";
-  request += REGISTRATION_ENDPOINT;
-  request += " HTTP/1.1\r\n";
-  request += "Host: ";
-  request += REGISTRATION_SERVER;
-  request += ":";
-  request += REGISTRATION_PORT;
-  request += "\r\n";
-  request += "Content-Type: application/json\r\n";
-  request += "Content-Length: ";
-  request += payload.length();
-  request += "\r\n";
-  request += "Connection: close\r\n";
-  request += "\r\n";
-  request += payload;
+  // Build HTTP request using snprintf (no String class!)
+  static char request[512];
+  int payloadLen = strlen(payload);
+  snprintf(request, sizeof(request),
+    "POST %s HTTP/1.1\r\n"
+    "Host: %s:%d\r\n"
+    "Content-Type: application/json\r\n"
+    "Content-Length: %d\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+    "%s",
+    REGISTRATION_ENDPOINT,
+    REGISTRATION_SERVER,
+    REGISTRATION_PORT,
+    payloadLen,
+    payload);
   
   Serial.print("[Registration] Sending request... ");
   httpClient.print(request);
   Serial.println("done");
   
-  // Wait for response
+  // Wait for response (bounded buffer, no String fragmentation)
   unsigned long timeout = millis() + 5000;  // 5 second timeout
-  String response = "";
-  String statusLine = "";
+  static char response[2048];
+  int responseLen = 0;
   
   while (httpClient.connected() || httpClient.available()) {
     if (millis() > timeout) {
@@ -838,51 +908,47 @@ void registerDevice() {
       break;
     }
     
-    if (httpClient.available()) {
+    if (httpClient.available() && responseLen < (int)(sizeof(response) - 1)) {
       char c = httpClient.read();
-      response += c;
+      response[responseLen++] = c;
     }
     delay(1);
   }
+  response[responseLen] = '\0';
   
   httpClient.stop();
   
   // Extract HTTP status code from response
   int statusCode = 200;
-  if (response.indexOf("HTTP/1.1") != -1) {
-    int spacePos = response.indexOf(" ");
-    if (spacePos != -1) {
-      String statusStr = response.substring(spacePos + 1, spacePos + 4);
-      statusCode = statusStr.toInt();
-    }
+  const char* statusCodeStr = strstr(response, "HTTP/1.1");
+  if (statusCodeStr != nullptr) {
+    sscanf(statusCodeStr, "HTTP/1.1 %d", &statusCode);
   }
   
   Serial.print("[Registration] HTTP Status: ");
   Serial.println(statusCode);
   
   // Parse response
-  if (response.length() > 0) {
+  if (responseLen > 0) {
     // Find JSON part (skip HTTP headers)
-    int jsonStart = response.indexOf("\r\n\r\n");
-    if (jsonStart != -1) {
+    const char* jsonStart = strstr(response, "\r\n\r\n");
+    if (jsonStart != nullptr) {
       jsonStart += 4;  // Skip "\r\n\r\n"
-      String jsonStr = response.substring(jsonStart);
       
       Serial.print("[Registration] Raw response: ");
-      Serial.println(jsonStr);
+      Serial.println(jsonStart);
       
       StaticJsonDocument<512> responseDoc;
-      DeserializationError error = deserializeJson(responseDoc, jsonStr);
+      DeserializationError error = deserializeJson(responseDoc, jsonStart);
       
       if (!error) {
         if (statusCode == 409) {
           // Device already registered - mark as registered without secret
           Serial.println("[Registration] ✓ Device already registered on backend (409 Conflict)");
           deviceRegistered = true;
-          // Try to load secret from storage in case it exists
         } else if (responseDoc.containsKey("device_secret")) {
-          String secret = responseDoc["device_secret"];
-          strncpy(deviceSecret, secret.c_str(), DEVICE_SECRET_MAX_LEN - 1);
+          const char* secret = responseDoc["device_secret"];
+          strncpy(deviceSecret, secret, DEVICE_SECRET_MAX_LEN - 1);
           deviceSecret[DEVICE_SECRET_MAX_LEN - 1] = 0;
           
           // Save to EEPROM
@@ -891,7 +957,9 @@ void registerDevice() {
           
           Serial.println("[Registration] ✓ Device registered successfully!");
           Serial.print("[Registration] Device Secret (first 16 chars): ");
-          Serial.print(secret.substring(0, 16));
+          for (int i = 0; i < 16 && secret[i] != '\0'; i++) {
+            Serial.print(secret[i]);
+          }
           Serial.println("...");
         } else {
           Serial.println("[Registration] ✗ Unexpected response (no device_secret)");
@@ -911,6 +979,156 @@ void registerDevice() {
     }
   } else {
     Serial.println("[Registration] ✗ Empty response from server");
+  }
+  
+  Serial.println();
+}
+
+// ===== SCHEDULE SYNC FROM API =====
+void syncScheduleFromAPI() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Schedule Sync] WiFi not connected, skipping");
+    return;
+  }
+  
+  Serial.println("\n[Schedule Sync] Starting schedule sync from API...");
+  Serial.print("[Schedule Sync] Tank ID: ");
+  Serial.println(tankId);
+  
+  // Create HTTP request
+  WiFiClient httpClient;
+  
+  if (!httpClient.connect(REGISTRATION_SERVER, REGISTRATION_PORT)) {
+    Serial.print("[Schedule Sync] Failed to connect to ");
+    Serial.print(REGISTRATION_SERVER);
+    Serial.print(":");
+    Serial.println(REGISTRATION_PORT);
+    return;
+  }
+  
+  Serial.print("[Schedule Sync] Connected to ");
+  Serial.print(REGISTRATION_SERVER);
+  Serial.print(":");
+  Serial.println(REGISTRATION_PORT);
+  
+  // Build HTTP GET request for schedule endpoint
+  static char request[256];
+  snprintf(request, sizeof(request),
+    "GET /devices/%s/schedule HTTP/1.1\r\n"
+    "Host: %s:%d\r\n"
+    "Connection: close\r\n"
+    "\r\n",
+    tankId,
+    REGISTRATION_SERVER,
+    REGISTRATION_PORT);
+  
+  Serial.print("[Schedule Sync] Sending request... ");
+  httpClient.print(request);
+  Serial.println("done");
+  
+  // Wait for response (bounded buffer)
+  unsigned long timeout = millis() + 5000;  // 5 second timeout
+  static char response[2048];
+  int responseLen = 0;
+  
+  while (httpClient.connected() || httpClient.available()) {
+    if (millis() > timeout) {
+      Serial.println("[Schedule Sync] Response timeout");
+      break;
+    }
+    
+    if (httpClient.available() && responseLen < (int)(sizeof(response) - 1)) {
+      char c = httpClient.read();
+      response[responseLen++] = c;
+    }
+    delay(1);
+  }
+  response[responseLen] = '\0';
+  
+  httpClient.stop();
+  
+  // Extract HTTP status code
+  int statusCode = 200;
+  const char* statusCodeStr = strstr(response, "HTTP/1.1");
+  if (statusCodeStr != nullptr) {
+    sscanf(statusCodeStr, "HTTP/1.1 %d", &statusCode);
+  }
+  
+  Serial.print("[Schedule Sync] HTTP Status: ");
+  Serial.println(statusCode);
+  
+  // Parse response
+  if (responseLen > 0) {
+    // Find JSON part (skip HTTP headers)
+    const char* jsonStart = strstr(response, "\r\n\r\n");
+    if (jsonStart != nullptr) {
+      jsonStart += 4;  // Skip "\r\n\r\n"
+      
+      Serial.print("[Schedule Sync] Raw response: ");
+      Serial.println(jsonStart);
+      
+      StaticJsonDocument<256> scheduleDoc;
+      DeserializationError error = deserializeJson(scheduleDoc, jsonStart);
+      
+      if (!error && statusCode == 200) {
+        if (scheduleDoc.containsKey("on_time") && 
+            scheduleDoc.containsKey("off_time") && 
+            scheduleDoc.containsKey("enabled")) {
+          
+          const char* onTimeStr = scheduleDoc["on_time"];
+          const char* offTimeStr = scheduleDoc["off_time"];
+          bool enabled = scheduleDoc["enabled"];
+          
+          // Parse on_time (format: "HH:MM")
+          int newOnHour, newOnMinute;
+          if (sscanf(onTimeStr, "%d:%d", &newOnHour, &newOnMinute) != 2) {
+            Serial.println("[Schedule Sync] ✗ Invalid on_time format");
+            return;
+          }
+          
+          // Parse off_time
+          int newOffHour, newOffMinute;
+          if (sscanf(offTimeStr, "%d:%d", &newOffHour, &newOffMinute) != 2) {
+            Serial.println("[Schedule Sync] ✗ Invalid off_time format");
+            return;
+          }
+          
+          // Update schedule
+          scheduleOnHour = newOnHour;
+          scheduleOnMinute = newOnMinute;
+          scheduleOffHour = newOffHour;
+          scheduleOffMinute = newOffMinute;
+          scheduleEnabled = enabled;
+          
+          // Reset state tracker for re-evaluation
+          lastAppliedLightWindowState = false;
+          
+          // Save to EEPROM
+          saveSchedule();
+          
+          Serial.print("[Schedule Sync] ✓ Schedule synced: ON ");
+          Serial.print(newOnHour);
+          Serial.print(":");
+          Serial.print(newOnMinute);
+          Serial.print(", OFF ");
+          Serial.print(newOffHour);
+          Serial.print(":");
+          Serial.print(newOffMinute);
+          Serial.print(" (enabled=");
+          Serial.print(enabled ? "true" : "false");
+          Serial.println(")");
+        } else {
+          Serial.println("[Schedule Sync] ✗ Response missing schedule fields");
+        }
+      } else {
+        Serial.print("[Schedule Sync] ✗ JSON parse error or 404: ");
+        Serial.println(error.c_str());
+      }
+    } else {
+      Serial.println("[Schedule Sync] ✗ No JSON found in response");
+    }
+  } else {
+    Serial.println("[Schedule Sync] ✗ Empty response from server");
   }
   
   Serial.println();

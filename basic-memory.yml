@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  basic-memory-db:
+    image: postgres:15-alpine
+    container_name: basic-memory-db
+    environment:
+      POSTGRES_DB: database
+      POSTGRES_USER: basic_memory
+      POSTGRES_PASSWORD: basic_memory_password
+    volumes:
+      - basic-memory-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basic_memory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  basic-memory:
+    image: ghcr.io/basicmachines-co/basic-memory:latest
+    container_name: basic-memory-server
+    depends_on:
+      basic-memory-db:
+        condition: service_healthy
+    
+    volumes:
+      # Persistent storage for configuration and database
+      - basic-memory-config:/root/.basic-memory:rw
+    
+    environment:
+      # Database configuration
+      - DATABASE_URL=postgresql://basic_memory:basic_memory_password@basic-memory-db:5432/database
+      
+      # Project configuration
+      - BASIC_MEMORY_DEFAULT_PROJECT=main
+      
+      # Enable real-time file synchronization (recommended for Docker)
+      - BASIC_MEMORY_SYNC_CHANGES=true
+      
+      # Logging configuration
+      - BASIC_MEMORY_LOG_LEVEL=INFO
+      
+      # Sync delay in milliseconds (adjust for performance vs responsiveness)
+      - BASIC_MEMORY_SYNC_DELAY=1000
+    
+    ports:
+      - "8000:8000"
+    
+    command: ["basic-memory", "mcp", "--transport", "sse", "--host", "0.0.0.0", "--port", "8000"]
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "basic-memory", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  basic-memory-db:
+    driver: local
+  
+  basic-memory-config:
+    driver: local

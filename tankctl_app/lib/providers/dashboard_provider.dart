@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tankctl_app/providers/device_provider.dart';
-import 'package:tankctl_app/providers/telemetry_provider.dart';
 import 'package:tankctl_app/services/telemetry_service.dart';
 
 class DashboardOverview {
@@ -77,20 +76,4 @@ final dashboardOverviewProvider = FutureProvider<DashboardOverview>((ref) async 
     coldestDeviceId: coldestDeviceId,
     coldestTemp: coldestTemp,
   );
-});
-
-final dashboardWarningCountProvider = Provider<int>((ref) {
-  final devices = ref.watch(devicesListProvider).valueOrNull;
-  if (devices == null) {
-    return 0;
-  }
-
-  var count = 0;
-  for (final device in devices) {
-    final deviceId = device['device_id'] as String;
-    if (ref.watch(deviceWarningProvider(deviceId)) != null) {
-      count += 1;
-    }
-  }
-  return count;
 });
