@@ -30,6 +30,7 @@ EventType = Literal[
     
     # Device state
     "light_state_changed",
+    "relay_state_changed",
     
     # Scheduler
     "scheduled_command_triggered",
@@ -185,3 +186,12 @@ def mqtt_connected_event() -> Event:
 def mqtt_disconnected_event() -> Event:
     """MQTT disconnected event."""
     return Event(event="mqtt_disconnected")
+
+
+def relay_state_changed_event(device_id: str, changes: Dict[str, Any]) -> Event:
+    """Relay state changed event. changes maps relay_name → new state ("on"/"off")."""
+    return Event(
+        event="relay_state_changed",
+        device_id=device_id,
+        metadata={"changes": changes},
+    )

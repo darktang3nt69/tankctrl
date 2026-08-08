@@ -86,36 +86,6 @@ class Device:
 
 
 @dataclass
-class LightSchedule:
-    """
-    Light schedule for a device.
-
-    Controls when lights turn on/off.
-    """
-
-    id: int | None = None
-    """Database primary key"""
-
-    device_id: str | None = None
-    """Device identifier"""
-
-    enabled: bool = True
-    """Whether schedule is active"""
-
-    start_time: str = "08:00"
-    """Start time in HH:MM format"""
-
-    end_time: str = "20:00"
-    """End time in HH:MM format"""
-
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    """Timestamp when schedule was created"""
-
-    updated_at: datetime = field(default_factory=datetime.utcnow)
-    """Timestamp when schedule was last updated"""
-
-
-@dataclass
 class WaterSchedule:
     """
     Water change schedule for a device.
