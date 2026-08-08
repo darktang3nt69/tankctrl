@@ -18,14 +18,9 @@ class AlertService:
     """Evaluates alert rules and sends rate-limited notifications via FCM."""
 
     def __init__(self):
-        # Use a DB session for token repository
-        session = db.get_session()
-        token_repo = DevicePushTokenRepository(session)
-        self.push_service = PushNotificationService(
-            token_repo,
-            settings.fcm_service_account_json,
-            settings.fcm_project_id,
-        )
+        # Rate-limit state only — no DB session stored here.
+        # A fresh session is opened per send to avoid sharing a session across
+        # the paho MQTT thread and the APScheduler thread.
         self._last_sent_by_key: dict[str, float] = {}
 
     def _can_send(self, alert_key: str) -> bool:
@@ -49,7 +44,18 @@ class AlertService:
             logger.debug("alert_suppressed_rate_limit", alert_key=alert_key)
             return
 
-        sent = self.push_service.broadcast_fcm(device_id, title, message, notification_type=notification_type)
+        session = db.get_session()
+        try:
+            token_repo = DevicePushTokenRepository(session)
+            push_service = PushNotificationService(
+                token_repo,
+                settings.fcm_service_account_json,
+                settings.fcm_project_id,
+            )
+            sent = push_service.broadcast_fcm(device_id, title, message, notification_type=notification_type)
+        finally:
+            session.close()
+
         if sent > 0:
             self._mark_sent(alert_key)
             logger.info("alert_sent", alert_key=alert_key, sent=sent, type=notification_type)

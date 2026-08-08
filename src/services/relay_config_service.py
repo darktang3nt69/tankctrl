@@ -17,7 +17,6 @@ from src.repository.relay_config_repository import RelayConfigRepository
 from src.repository.device_repository import DeviceRepository
 from src.services.command_service import CommandService
 from src.utils.logger import get_logger
-import json
 
 logger = get_logger(__name__)
 
@@ -191,11 +190,11 @@ class RelayConfigService:
             for relay_name, relay_config in config_dict.items():
                 mqtt_payload[relay_name] = relay_config.to_dict()
 
-            # Publish to MQTT
+            # Publish to MQTT — pass dict directly; mqtt_client.publish handles JSON encoding
             topic = MQTTTopics.config_topic(device_id)
             mqtt_client.publish(
                 topic,
-                json.dumps(mqtt_payload),
+                mqtt_payload,
                 qos=1,
                 retain=True
             )

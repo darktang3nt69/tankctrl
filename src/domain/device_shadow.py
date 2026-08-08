@@ -67,12 +67,15 @@ class DeviceShadow:
 
     def update_desired(self, state: dict) -> None:
         """
-        Update desired state.
+        Update desired state by merging — never replaces the whole dict.
+
+        Merging preserves other relay states (pump, co2, etc.) when a partial
+        update is applied (e.g. a light schedule firing with {"light": "on"}).
 
         Args:
-            state: New desired state
+            state: Partial desired state to merge in
         """
-        self.desired = state
+        self.desired = {**self.desired, **state}
         self.increment_version()
 
     def update_reported(self, state: dict) -> None:

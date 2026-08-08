@@ -53,15 +53,13 @@ class HeartbeatHandler(MessageHandler):
             device_id: Device ID
             payload: Heartbeat payload from device
         """
+        session = db.get_session()
         try:
-            session = db.get_session()
             service = DeviceService(session)
-            
-            # Check if device is registered
+
             device = service.get_device(device_id)
             if not device:
                 logger.warning("heartbeat_rejected_unregistered", device_id=device_id)
-                session.close()
                 return
 
             service.handle_heartbeat(
@@ -73,9 +71,8 @@ class HeartbeatHandler(MessageHandler):
             )
 
             logger.info("device_heartbeat_handled", device_id=device_id)
-            
+
             # Reconcile shadow state to fix any drift from power loss or disconnections
-            # This sends commands to bring device into desired state if needed
             shadow_service = ShadowService(session)
             shadow = shadow_service.reconcile_shadow(device_id)
             if shadow and not shadow.is_synchronized():
@@ -84,10 +81,11 @@ class HeartbeatHandler(MessageHandler):
                     device_id=device_id,
                     delta=shadow.get_delta(),
                 )
-            
-            session.close()
+
         except Exception as e:
             logger.error("heartbeat_handler_error", device_id=device_id, error=str(e))
+        finally:
+            session.close()
 
 
 class ReportedStateHandler(MessageHandler):
@@ -103,15 +101,13 @@ class ReportedStateHandler(MessageHandler):
             device_id: Device ID
             payload: Reported state from device
         """
+        session = db.get_session()
         try:
-            session = db.get_session()
             device_service = DeviceService(session)
-            
-            # Check if device is registered
+
             device = device_service.get_device(device_id)
             if not device:
                 logger.warning("reported_state_rejected_unregistered", device_id=device_id)
-                session.close()
                 return
 
             shadow_service = ShadowService(session)
@@ -139,9 +135,11 @@ class ReportedStateHandler(MessageHandler):
                     command_service.mark_command_executed(command.id)
 
             logger.info("reported_state_handled", device_id=device_id)
-            session.close()
+
         except Exception as e:
             logger.error("reported_state_handler_error", device_id=device_id, error=str(e))
+        finally:
+            session.close()
 
 
 class TelemetryHandler(MessageHandler):
@@ -157,31 +155,33 @@ class TelemetryHandler(MessageHandler):
             device_id: Device ID
             payload: Telemetry data from device
         """
+        # Check device registration — short-lived session, always closed
+        check_session = db.get_session()
         try:
-            # Check if device is registered first
-            check_session = db.get_session()
-            device_service = DeviceService(check_session)
-            device = device_service.get_device(device_id)
+            device = DeviceService(check_session).get_device(device_id)
+        finally:
             check_session.close()
-            
-            if not device:
-                logger.warning("telemetry_rejected_unregistered", device_id=device_id)
-                return
 
-            # Use telemetry session
-            session = db.get_timescale_session()
-            service = TelemetryService(session)
+        if not device:
+            logger.warning("telemetry_rejected_unregistered", device_id=device_id)
+            return
 
-            # Store telemetry
-            service.store_telemetry(device_id, payload)
+        # Store telemetry in TimescaleDB
+        ts_session = db.get_timescale_session()
+        try:
+            TelemetryService(ts_session).store_telemetry(device_id, payload)
+        except Exception as e:
+            logger.error("telemetry_store_error", device_id=device_id, error=str(e))
+        finally:
+            ts_session.close()
 
-            # Also mark device as online (heartbeat behavior)
-            db_session = db.get_session()
-            device_service = DeviceService(db_session)
-            device_service.handle_heartbeat(device_id)
+        # Update device heartbeat
+        db_session = db.get_session()
+        try:
+            DeviceService(db_session).handle_heartbeat(device_id)
+        except Exception as e:
+            logger.error("telemetry_heartbeat_error", device_id=device_id, error=str(e))
+        finally:
             db_session.close()
 
-            logger.debug("telemetry_handled", device_id=device_id)
-            session.close()
-        except Exception as e:
-            logger.error("telemetry_handler_error", device_id=device_id, error=str(e))
+        logger.debug("telemetry_handled", device_id=device_id)

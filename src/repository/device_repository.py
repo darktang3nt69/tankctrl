@@ -405,7 +405,11 @@ class DeviceShadowRepository:
             if not db_shadow:
                 return None
 
-            db_shadow.reported = json.dumps(reported_state)
+            # Merge rather than replace so a partial report (e.g. just {"light": "on"})
+            # from the device doesn't clobber other relay states (pump, co2, etc.)
+            existing = json.loads(db_shadow.reported)
+            merged = {**existing, **reported_state}
+            db_shadow.reported = json.dumps(merged)
             db_shadow.updated_at = datetime.utcnow()
 
             self.session.commit()
@@ -414,7 +418,7 @@ class DeviceShadowRepository:
             return DeviceShadow(
                 device_id=db_shadow.device_id,
                 desired=json.loads(db_shadow.desired),
-                reported=reported_state,
+                reported=merged,
                 version=db_shadow.version,
                 created_at=db_shadow.created_at,
                 updated_at=db_shadow.updated_at,

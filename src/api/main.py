@@ -69,14 +69,17 @@ async def lifespan(app: FastAPI):
         event_publisher.subscribe("light_state_changed", alert_service.handle_light_state_change_event)
         logger.info("event_system_ready")
         
-        # Connect to MQTT
+        # Connect to MQTT — non-fatal on startup; paho reconnects automatically
         logger.info("mqtt_connecting")
         mqtt_client.register_handler("telemetry", TelemetryHandler())
         mqtt_client.register_handler("reported", ReportedStateHandler())
         mqtt_client.register_handler("heartbeat", HeartbeatHandler())
         mqtt_client.register_handler("status", DeviceStatusHandler())
-        mqtt_client.connect()
-        logger.info("mqtt_ready")
+        try:
+            mqtt_client.connect()
+            logger.info("mqtt_ready")
+        except Exception as e:
+            logger.warning("mqtt_connect_failed_continuing", error=str(e))
         
         # Start scheduler
         logger.info("scheduler_starting")

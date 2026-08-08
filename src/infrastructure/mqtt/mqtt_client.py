@@ -121,13 +121,10 @@ class MQTTClient:
         try:
             result = self.client.publish(topic, message, qos=qos, retain=retain)
             if result.rc != mqtt.MQTT_ERR_SUCCESS:
-                logger.error(
-                    "mqtt_publish_failed",
-                    topic=topic,
-                    error_code=result.rc,
+                raise RuntimeError(
+                    f"MQTT publish failed: topic={topic} rc={result.rc}"
                 )
-            else:
-                logger.debug("mqtt_published", topic=topic)
+            logger.debug("mqtt_published", topic=topic)
         except Exception as e:
             logger.error("mqtt_publish_error", topic=topic, error=str(e))
             raise

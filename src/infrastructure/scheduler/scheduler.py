@@ -123,9 +123,13 @@ class TankCtlScheduler:
                 
                 for device in devices:
                     try:
+                        # Only reconcile online devices — offline devices can't receive commands
+                        if device.status != "online":
+                            continue
+
                         # Get shadow
                         shadow = device_service.get_device_shadow(device.device_id)
-                        
+
                         if shadow and not shadow.is_synchronized():
                             # Reconcile (publish command)
                             updated_shadow = shadow_service.reconcile_shadow(device.device_id)
