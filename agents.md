@@ -45,8 +45,6 @@ tankctl/
 │
 ├── api/
 │   ├── routes/
-│   │   ├── device_routes.py
-│   │   └── health_routes.py
 │   └── schemas.py
 │
 ├── domain/

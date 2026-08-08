@@ -216,7 +216,7 @@ Phase 1: (Can run in parallel - different files)
 
 Phase 2: (Depends on Phase 1, can run in parallel)
   - flutter-foundation → Files: tankctl_app/lib/features/alerts/alerts_screen.dart
-  - notifications-and-alerts → Files: src/services/notification_service.py
+  - notifications-and-alerts → Files: src/services/push_notification_service.py
 
 Phase 3: (After all implementation)
   - code-cleanup → Removes unused imports, dead code paths

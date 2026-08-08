@@ -61,7 +61,7 @@ src/
 │   ├── telemetry_service.py     # Telemetry handling
 │   ├── scheduling_service.py    # Light schedule management
 │   ├── alert_service.py         # Alert thresholds and suppression
-│   └── notification_service.py  # WhatsApp notifications
+│   └── push_notification_service.py  # FCM push notifications
 ├── repository/
 │   ├── device_repository.py     # Device & shadow data access
 │   ├── telemetry_repository.py  # Telemetry & command repositories
@@ -83,7 +83,7 @@ src/
 ├── utils/
 │   └── logger.py                # Structured logging
 ├── main.py                      # Backend entry point
-└── server.py                    # FastAPI application
+└── main.py                      # FastAPI application (use src/api/main.py)
 ```
 
 ## Components
@@ -114,7 +114,7 @@ src/
 
 **AlertService** — monitors telemetry against thresholds, suppresses duplicate alerts
 
-**NotificationService** — sends WhatsApp notifications via the whatsapp-bot sidecar
+**PushNotificationService** — sends FCM push notifications via Firebase
 
 ### 3. Domain Models (`domain/`)
 
@@ -244,12 +244,6 @@ ALERT_MIN_INTERVAL_SECONDS=600
 ALERT_TEMPERATURE_HIGH_C=30
 ALERT_TEMPERATURE_LOW_C=20
 
-# WhatsApp notifications (optional)
-WHATSAPP_ENABLED=false
-WHATSAPP_BOT_URL=http://whatsapp-bot:3001/send
-WHATSAPP_PHONE_NUMBER=
-WHATSAPP_REQUEST_TIMEOUT_SECONDS=5
-
 # Grafana
 GF_SECURITY_ADMIN_USER=admin
 GF_SECURITY_ADMIN_PASSWORD=admin
@@ -366,7 +360,6 @@ Services started:
 - `tankctl-mosquitto` — MQTT broker on port 1883
 - `tankctl-backend` — FastAPI + MQTT backend on port 8000
 - `tankctl-grafana` — Grafana dashboards on port 3000
-- `tankctl-whatsapp-bot` — WhatsApp notification bot on port 3001
 
 ## Running Locally (without Docker)
 
@@ -459,7 +452,7 @@ mosquitto_pub -h localhost -u tankctl -P password \
 ✓ Periodic shadow reconciliation
 ✓ Light scheduling (on/off time per day of week)
 ✓ Temperature and metric alerting with suppression
-✓ WhatsApp notifications via sidecar bot
+✓ FCM push notifications via Firebase
 ✓ Heartbeat diagnostics (uptime, RSSI, WiFi status)
 ✓ Grafana dashboards
 ✓ RESTful API
@@ -516,7 +509,7 @@ Example:
 
 1. **New MQTT Topics**: Add to `mqtt_topics.py`, create handler
 2. **New Services**: Follow pattern in `services/`
-3. **New API Routes**: Create in `api/routes/`, include in `server.py`
+3. **New API Routes**: Create in `api/routes/`, include in `src/api/main.py`
 4. **Custom Domain Models**: Add to `domain/`
 5. **New Database Tables**: Add to `infrastructure/db/models.py`
 
