@@ -113,6 +113,28 @@ class CommandServiceRelayValidationTests(unittest.TestCase):
         assert "Relay 'pump' not found" in str(ctx.exception)
 
     @patch("src.services.relay_config_service.RelayConfigService")
+    def test_validate_relay_command_infra_failure_not_misclassified_as_valueerror(
+        self, relay_service_cls: MagicMock
+    ):
+        """An infra failure (e.g. DB connectivity) while checking relay config
+        must propagate as itself, not get wrapped into ValueError — routes
+        treat ValueError as a 400 (bad input), but a DB outage is a 500/
+        retryable condition, not an invalid command from the caller.
+        """
+        session = MagicMock()
+        service = CommandService(session)
+
+        relay_service = relay_service_cls.return_value
+        relay_service.get_device_relay_config.side_effect = RuntimeError("connection refused")
+
+        with self.assertRaises(RuntimeError):
+            service._validate_relay_command(
+                device_id="tank1",
+                command="set_pump",
+                value="on",
+            )
+
+    @patch("src.services.relay_config_service.RelayConfigService")
     @patch("src.services.command_service.mqtt_client")
     @patch("src.services.command_service.event_publisher")
     def test_send_pump_command_success(

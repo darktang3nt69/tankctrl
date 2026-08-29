@@ -104,13 +104,16 @@ class CommandService:
         except ValueError:
             raise
         except Exception as e:
+            # Don't reclassify infra failures (DB outage, etc.) as ValueError —
+            # routes treat ValueError as a 400 (bad input); an outage is a
+            # 500/retryable condition, not an invalid command from the caller.
             logger.error(
                 "relay_validation_failed",
                 device_id=device_id,
                 relay_name=relay_name,
                 error=str(e),
             )
-            raise ValueError(f"Failed to validate relay for device {device_id}: {str(e)}")
+            raise
 
     def send_command(
         self,
