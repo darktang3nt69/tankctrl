@@ -22,6 +22,7 @@ from src.repository.device_repository import (
 )
 from src.repository.light_schedule_repository import LightScheduleRepository
 from src.repository.telemetry_repository import CommandRepository, TelemetryRepository
+from src.repository.water_schedule_repository import WaterScheduleRepository
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -398,10 +399,8 @@ class DeviceService:
             return None
 
         # Build detail response with device info, light schedule, water schedules
-        from src.infrastructure.db.models import LightScheduleModel, WaterScheduleModel
-        
-        light_schedule = self.session.query(LightScheduleModel).filter_by(device_id=device_id).first()
-        water_schedules = self.session.query(WaterScheduleModel).filter_by(device_id=device_id).all()
+        light_schedule = LightScheduleRepository(self.session).get_by_device_id(device_id)
+        water_schedules = WaterScheduleRepository(self.session).get_all_for_device(device_id)
 
         return {
             "device_id": device.device_id,
@@ -433,7 +432,7 @@ class DeviceService:
                     "device_id": ws.device_id,
                     "schedule_type": ws.schedule_type,
                     "days_of_week": [int(d.strip()) for d in ws.days_of_week.split(",")] if ws.days_of_week else None,
-                    "schedule_date": ws.schedule_date.isoformat() if ws.schedule_date else None,
+                    "schedule_date": ws.schedule_date,  # already an ISO 'YYYY-MM-DD' string
                     "schedule_time": str(ws.schedule_time),
                     "notes": ws.notes,
                     "completed": ws.completed,
@@ -447,113 +446,20 @@ class DeviceService:
 
     def create_water_schedule(self, device_id: str, schedule_data: dict):
         """Create water change schedule for device."""
-        from src.infrastructure.db.models import WaterScheduleModel
-        from datetime import time
-
         device = self.device_repo.get_by_id(device_id)
         if not device:
             return None
 
-        schedule_time = time.fromisoformat(schedule_data["schedule_time"])
-        
-        # Convert days_of_week list to comma-separated string
-        days_of_week_str = None
-        if schedule_data.get("days_of_week"):
-            days_of_week_str = ",".join(str(d) for d in schedule_data["days_of_week"])
-
-        # For weekly schedules, clear schedule_date. For custom, clear days_of_week.
-        schedule_date = None
-        if schedule_data["schedule_type"] == "custom":
-            schedule_date = schedule_data.get("schedule_date")
-            days_of_week_str = None  # Custom schedules don't use days_of_week
-
-        new_schedule = WaterScheduleModel(
-            device_id=device_id,
-            schedule_type=schedule_data["schedule_type"],
-            days_of_week=days_of_week_str,
-            schedule_date=schedule_date,
-            schedule_time=schedule_time,
-            notes=schedule_data.get("notes"),
-            enabled=schedule_data.get("enabled", True),
-            notify_24h=schedule_data.get("notify_24h", True),
-            notify_1h=schedule_data.get("notify_1h", True),
-            notify_on_time=schedule_data.get("notify_on_time", True),
-        )
-        self.session.add(new_schedule)
-        self.session.commit()
-        return new_schedule
+        return WaterScheduleRepository(self.session).create(device_id, schedule_data)
 
     def update_water_schedule(self, device_id: str, schedule_id: int, schedule_data: dict):
         """Update water change schedule for device."""
-        from src.infrastructure.db.models import WaterScheduleModel
-        from datetime import time as time_type
-
-        schedule = self.session.query(WaterScheduleModel).filter_by(
-            id=schedule_id,
-            device_id=device_id,
-        ).first()
-
-        if not schedule:
-            return None
-
-        if "schedule_time" in schedule_data and schedule_data["schedule_time"]:
-            schedule.schedule_time = time_type.fromisoformat(schedule_data["schedule_time"])
-        if "schedule_type" in schedule_data:
-            schedule.schedule_type = schedule_data["schedule_type"]
-            # Clear type-specific fields when changing schedule_type
-            if schedule_data["schedule_type"] == "weekly":
-                schedule.schedule_date = None
-            elif schedule_data["schedule_type"] == "custom":
-                schedule.days_of_week = None
-        if "days_of_week" in schedule_data:
-            # Convert days_of_week list to comma-separated string
-            if schedule_data["days_of_week"]:
-                schedule.days_of_week = ",".join(str(d) for d in schedule_data["days_of_week"])
-            else:
-                schedule.days_of_week = None
-        if "schedule_date" in schedule_data:
-            schedule.schedule_date = schedule_data["schedule_date"]
-        
-        # Ensure type-specific fields are cleared
-        if schedule.schedule_type == "weekly":
-            schedule.schedule_date = None
-        elif schedule.schedule_type == "custom":
-            schedule.days_of_week = None
-            
-        if "notes" in schedule_data:
-            schedule.notes = schedule_data["notes"]
-        if "enabled" in schedule_data:
-            schedule.enabled = schedule_data["enabled"]
-        
-        # Update notification preferences
-        if "notify_24h" in schedule_data:
-            schedule.notify_24h = schedule_data["notify_24h"]
-        if "notify_1h" in schedule_data:
-            schedule.notify_1h = schedule_data["notify_1h"]
-        if "notify_on_time" in schedule_data:
-            schedule.notify_on_time = schedule_data["notify_on_time"]
-
-        self.session.commit()
-        return schedule
+        return WaterScheduleRepository(self.session).update(device_id, schedule_id, schedule_data)
 
     def get_water_schedules(self, device_id: str) -> list:
         """Get all water schedules for device."""
-        from src.infrastructure.db.models import WaterScheduleModel
-        
-        return self.session.query(WaterScheduleModel).filter_by(device_id=device_id).all()
+        return WaterScheduleRepository(self.session).get_all_for_device(device_id)
 
     def delete_water_schedule(self, device_id: str, schedule_id: int) -> bool:
         """Delete water change schedule."""
-        from src.infrastructure.db.models import WaterScheduleModel
-        
-        schedule = self.session.query(WaterScheduleModel).filter_by(
-            id=schedule_id,
-            device_id=device_id
-        ).first()
-        
-        if not schedule:
-            return False
-
-        self.session.delete(schedule)
-        self.session.commit()
-        return True
+        return WaterScheduleRepository(self.session).delete(device_id, schedule_id)

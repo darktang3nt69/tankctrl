@@ -592,7 +592,7 @@ def _serialize_water_schedule(schedule) -> WaterScheduleResponse:
         device_id=schedule.device_id,
         schedule_type=schedule.schedule_type,
         days_of_week=days_of_week,
-        schedule_date=schedule.schedule_date.isoformat() if schedule.schedule_date else None,
+        schedule_date=schedule.schedule_date,  # already an ISO 'YYYY-MM-DD' string
         schedule_time=str(schedule.schedule_time),
         notes=schedule.notes,
         completed=schedule.completed,

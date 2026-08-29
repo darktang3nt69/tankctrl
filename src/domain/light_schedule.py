@@ -19,16 +19,19 @@ class LightSchedule:
     
     device_id: str
     """Device identifier"""
-    
+
     on_time: time
     """Daily time to turn light on (e.g., 18:00)"""
-    
+
     off_time: time
     """Daily time to turn light off (e.g., 06:00)"""
-    
+
     enabled: bool = True
     """Whether schedule is active"""
-    
+
+    id: Optional[int] = None
+    """Database primary key"""
+
     created_at: Optional[datetime] = None
     """When schedule was created"""
     

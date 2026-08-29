@@ -143,6 +143,7 @@ class LightScheduleRepository:
     def _to_domain(self, db_schedule: LightScheduleModel) -> LightSchedule:
         """Convert database model to domain model."""
         return LightSchedule(
+            id=db_schedule.id,
             device_id=db_schedule.device_id,
             on_time=db_schedule.on_time,
             off_time=db_schedule.off_time,
