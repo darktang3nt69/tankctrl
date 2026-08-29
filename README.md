@@ -135,6 +135,8 @@ Periodic APScheduler tasks:
 
 ### 5. Database Models (`infrastructure/db/`)
 
+> This list covers the original core tables. Several more have been added since (device push tokens, warning acknowledgements, light/water schedules, firmware releases, relay config, and more) — see `migrations/` for the authoritative, current schema.
+
 **devices**
 ```sql
 CREATE TABLE devices (
@@ -252,6 +254,8 @@ GF_SECURITY_ADMIN_PASSWORD=admin
 > Use Docker service names (`mosquitto`, `postgres`, `timescaledb`) when running inside Docker. Change to `localhost` for local development outside Docker.
 
 ## API Endpoints
+
+> This list covers the original core routes. The API has grown beyond it (water schedules, relay config, push tokens, live/WebSocket updates, warning acknowledgements, and more) — see `src/api/routes/` for the authoritative, current route set.
 
 ### Devices
 

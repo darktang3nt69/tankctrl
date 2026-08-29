@@ -403,6 +403,8 @@ Result: Implemented, cleaned up, documented
 
 ## Frontend Team (Next.js Web App)
 
+> `tankctl-web/` does not exist in this repo yet — the old Flutter/Android app was removed and the web UI is a fresh rebuild not yet started. This section describes the target design for that future app, not current code.
+
 ### 5. frontend-core (Next.js + App Router + Server/Client Components)
 
 **Triggers on:** `tankctl-web/app/`, `tankctl-web/src/pages/`
