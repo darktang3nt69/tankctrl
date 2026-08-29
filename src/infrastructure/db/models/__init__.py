@@ -73,22 +73,6 @@ class CommandModel(Base):
         return f"<CommandModel(id={self.id}, device_id={self.device_id}, command={self.command})>"
 
 
-class TelemetryModel(Base):
-    """Telemetry table model for TimescaleDB."""
-
-    __tablename__ = "telemetry"
-
-    id = Column(Integer, primary_key=True)
-    device_id = Column(String(50), nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    metric_name = Column(String(100), nullable=False)
-    metric_value = Column(Float, nullable=False)
-    additional_metadata = Column(Text, nullable=True)  # JSON string for additional data
-
-    def __repr__(self):
-        return f"<TelemetryModel(device_id={self.device_id}, metric={self.metric_name})>"
-
-
 class EventRecord(Base):
     """Event record table model for audit trail and observability."""
 

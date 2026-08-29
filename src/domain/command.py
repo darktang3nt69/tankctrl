@@ -62,17 +62,18 @@ class Command:
         Returns:
             Dictionary ready for JSON serialization to MQTT
         """
-        payload = {
-            "version": self.version,
-            "command": self.command,
-        }
-        if self.value is not None:
-            payload["value"] = self.value
-        
-        # Include metadata if present (for commands like firmware updates)
+        # Metadata first, so it can't clobber the idempotency-critical fields
+        # below (e.g. firmware-update metadata carrying its own "version" key
+        # for the firmware version string, distinct from the command version).
+        payload = {}
         if hasattr(self, 'metadata') and self.metadata:
             payload.update(self.metadata)
-        
+
+        payload["version"] = self.version
+        payload["command"] = self.command
+        if self.value is not None:
+            payload["value"] = self.value
+
         return payload
 
     def mark_sent(self) -> None:
