@@ -47,7 +47,7 @@ def weekly_schedule():
     schedule.id = 101
     schedule.device_id = "tank1"
     schedule.schedule_type = "weekly"
-    schedule.day_of_week = 1  # Monday (0=Sun, 1=Mon, ..., 6=Sat)
+    schedule.days_of_week = "1"  # Monday (schema: 0=Sunday ... 6=Saturday)
     schedule.schedule_date = None
     schedule.schedule_time = time_type(15, 0)  # 3:00 PM
     schedule.notes = "Weekly water change"
@@ -67,7 +67,7 @@ def custom_schedule():
     schedule.id = 102
     schedule.device_id = "tank1"
     schedule.schedule_type = "custom"
-    schedule.day_of_week = None
+    schedule.days_of_week = None
     schedule.schedule_date = "2026-03-20"  # Specific date
     schedule.schedule_time = time_type(10, 30)  # 10:30 AM
     schedule.notes = "One-time water change"
@@ -88,34 +88,38 @@ def custom_schedule():
 class TestReminderServiceWeekly:
     """Test reminder logic for weekly water schedules."""
 
-    def test_should_fire_on_time_reminder_exact_minute(self, reminder_service, weekly_schedule, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_should_fire_on_time_reminder_exact_minute(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """Reminder fires when current time equals scheduled time."""
         # Monday 3:00 PM IST
-        now = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         # We're at Monday 3:00 PM; Weekly schedule is Monday 3:00 PM → should fire "on_time"
         assert len(due) == 1
         assert due[0] == (weekly_schedule, "on_time")
 
-    def test_should_not_fire_different_weekday(self, reminder_service, weekly_schedule, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_should_not_fire_different_weekday(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """Reminder does not fire on wrong day of week."""
         # Tuesday (not Monday)
-        now = datetime(2026, 3, 17, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 17, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 0
 
-    def test_should_fire_day_before_reminder_hourly(self, reminder_service, weekly_schedule, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_should_fire_day_before_reminder_hourly(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """24-hour before reminder fires 24 h before the event."""
         # Sunday 3:00 PM IST (24 h before Monday 3:00 PM)
-        now = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 1
         assert due[0] == (weekly_schedule, "day_before")
 
-    def test_should_fire_hour_before_reminder(self, reminder_service, weekly_schedule, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_should_fire_hour_before_reminder(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """1-hour before reminder fires at scheduled_time - 1 hour."""
         # Monday 2:00 PM IST (1 h before Monday 3:00 PM)
-        now = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 1
         assert due[0] == (weekly_schedule, "hour_before")
@@ -123,14 +127,12 @@ class TestReminderServiceWeekly:
     def test_should_not_fire_if_disabled(self, reminder_service, weekly_schedule, app_tz):
         """Disabled schedule does not trigger reminders."""
         weekly_schedule.enabled = False
-        now = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 0
 
     def test_should_not_fire_if_completed(self, reminder_service, weekly_schedule, app_tz):
         """Completed schedule does not trigger reminders."""
         weekly_schedule.completed = True
-        now = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 0
 
@@ -138,26 +140,29 @@ class TestReminderServiceWeekly:
 class TestReminderServiceCustom:
     """Test reminder logic for custom-date water schedules."""
 
-    def test_should_fire_on_custom_date(self, reminder_service, custom_schedule, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_should_fire_on_custom_date(self, mock_now, reminder_service, custom_schedule, app_tz):
         """Custom schedule fires on the specified date at specified time."""
         # 2026-03-20 10:30 AM IST
-        now = datetime(2026, 3, 20, 10, 30, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 20, 10, 30, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([custom_schedule])
         assert len(due) == 1
         assert due[0] == (custom_schedule, "on_time")
 
-    def test_should_fire_day_before_custom(self, reminder_service, custom_schedule, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_should_fire_day_before_custom(self, mock_now, reminder_service, custom_schedule, app_tz):
         """24-hour reminder fires 1 day before custom date."""
         # 2026-03-19 10:30 AM IST (24 h before 2026-03-20)
-        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 19, 10, 30, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([custom_schedule])
         assert len(due) == 1
         assert due[0] == (custom_schedule, "day_before")
 
-    def test_should_not_fire_before_custom_date(self, reminder_service, custom_schedule, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_should_not_fire_before_custom_date(self, mock_now, reminder_service, custom_schedule, app_tz):
         """No reminder fires before the custom date."""
         # 2026-03-18 (before the 2026-03-20 schedule)
-        now = datetime(2026, 3, 18, 10, 30, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 18, 10, 30, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([custom_schedule])
         assert len(due) == 0
 
@@ -165,42 +170,44 @@ class TestReminderServiceCustom:
 class TestReminderServiceDedup:
     """Test deduplication logic — prevents double-sending within 2 hours."""
 
-    def test_dedup_prevents_duplicate_send(self, reminder_service, weekly_schedule, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_dedup_prevents_duplicate_send(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """Same reminder doesn't fire twice within 2-hour window."""
-        now = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
-        
+        mock_now.return_value = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
+
         # First call — should fire
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 1
-        
-        # If we check again 1 hour later (still within 2-hour window)
-        # the cache should prevent re-sending
-        later = datetime(2026, 3, 16, 16, 0, 0, tzinfo=app_tz)
-        # Simulate the passage of 1 hour by advancing "now"
-        with patch('src.services.water_schedule_reminder_service.datetime') as mock_dt:
-            mock_dt.now.return_value = later
-            # (This won't work perfectly because timezone logic, but illustrates concept)
-            # For a proper test, we'd need to mock the internal _sent_cache
-            pass
 
-    def test_dedup_cache_by_schedule_id_and_reminder_type(self, reminder_service, app_tz):
+        # Querying again at the same moment — already sent, suppressed by
+        # the 2-hour dedup cache.
+        due_again = reminder_service.get_due_reminders([weekly_schedule])
+        assert len(due_again) == 0
+
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_dedup_cache_by_schedule_id_and_reminder_type(self, mock_now, reminder_service, app_tz):
         """Different reminder types for same schedule are separate cache entries."""
         schedule = Mock(spec=WaterScheduleModel)
         schedule.id = 201
         schedule.schedule_type = "weekly"
-        schedule.day_of_week = 1
+        schedule.days_of_week = "1"
         schedule.schedule_time = time_type(15, 0)
         schedule.enabled = True
         schedule.completed = False
-        
-        # Day before reminder
-        now_day_before = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
+        schedule.notify_24h = True
+        schedule.notify_1h = True
+        schedule.notify_on_time = True
+
+        # Sunday 3:00 PM — 24 h before Monday 3:00 PM
+        mock_now.return_value = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([schedule])
-        # Should get day_before
         assert any(r == (schedule, "day_before") for r in due)
-        
-        # One hour later, hour_before reminder should still fire (different cache entry)
-        # (This is a conceptual test — implementation requires careful time management)
+
+        # Monday 2:00 PM — 1 h before. A different (schedule_id, reminder_type)
+        # cache key, so it must still fire even though day_before already did.
+        mock_now.return_value = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
+        due = reminder_service.get_due_reminders([schedule])
+        assert any(r == (schedule, "hour_before") for r in due)
 
 
 class TestReminderServiceNotificationText:
@@ -238,134 +245,141 @@ class TestReminderServiceNotificationText:
 class TestNotificationPreferencesFiltering:
     """Test filtering reminders based on notification preferences (notify_* columns)."""
 
-    def test_day_before_disabled(self, reminder_service, weekly_schedule, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_day_before_disabled(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """When notify_24h=False, day_before reminder is skipped."""
         weekly_schedule.notify_24h = False
         weekly_schedule.notify_1h = True
         weekly_schedule.notify_on_time = True
-        
+
         # Sunday 3:00 PM IST (24 h before Monday 3:00 PM)
-        now = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
-        
+
         # Should not have day_before reminder
         assert not any(r[1] == "day_before" for r in due)
-    
-    def test_hour_before_disabled(self, reminder_service, weekly_schedule, app_tz):
+
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_hour_before_disabled(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """When notify_1h=False, hour_before reminder is skipped."""
         weekly_schedule.notify_24h = True
         weekly_schedule.notify_1h = False
         weekly_schedule.notify_on_time = True
-        
+
         # Monday 2:00 PM IST (1 h before Monday 3:00 PM)
-        now = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
-        
+
         # Should not have hour_before reminder
         assert not any(r[1] == "hour_before" for r in due)
-    
-    def test_on_time_disabled(self, reminder_service, weekly_schedule, app_tz):
+
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_on_time_disabled(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """When notify_on_time=False, on_time reminder is skipped."""
         weekly_schedule.notify_24h = True
         weekly_schedule.notify_1h = True
         weekly_schedule.notify_on_time = False
-        
+
         # Monday 3:00 PM IST
-        now = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
-        
+
         # Should not have on_time reminder
         assert not any(r[1] == "on_time" for r in due)
-    
-    def test_all_preferences_disabled(self, reminder_service, weekly_schedule, app_tz):
+
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_all_preferences_disabled(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """When all notify_* = False, no reminders fire."""
         weekly_schedule.notify_24h = False
         weekly_schedule.notify_1h = False
         weekly_schedule.notify_on_time = False
-        
+
         # Try at all three reminder times
         # Sunday 3:00 PM (day_before)
-        now = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 0
-        
+
         # Monday 2:00 PM (hour_before)
-        now = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 0
-        
+
         # Monday 3:00 PM (on_time)
-        now = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 0
-    
-    def test_all_preferences_enabled(self, reminder_service, weekly_schedule, app_tz):
+
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_all_preferences_enabled(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """When all notify_* = True, all reminders fire (backward compatibility)."""
         weekly_schedule.notify_24h = True
         weekly_schedule.notify_1h = True
         weekly_schedule.notify_on_time = True
-        
+
         # Day before
-        now = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert any(r[1] == "day_before" for r in due)
-        
+
         # Hour before (fresh cache for new test)
         reminder_service_2 = reminder_service.__class__()
-        now = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
         due = reminder_service_2.get_due_reminders([weekly_schedule])
         assert any(r[1] == "hour_before" for r in due)
-        
+
         # On time (fresh cache)
         reminder_service_3 = reminder_service.__class__()
-        now = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service_3.get_due_reminders([weekly_schedule])
         assert any(r[1] == "on_time" for r in due)
-    
-    def test_selective_reminder_filtering(self, reminder_service, weekly_schedule, app_tz):
+
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_selective_reminder_filtering(self, mock_now, reminder_service, weekly_schedule, app_tz):
         """Only 1h reminder enabled: fires only at hour_before time."""
         weekly_schedule.notify_24h = False
         weekly_schedule.notify_1h = True
         weekly_schedule.notify_on_time = False
-        
+
         # Test at day_before time → no reminder
-        now = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 15, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([weekly_schedule])
         assert len(due) == 0
-        
+
         # Test at hour_before time → reminder fires
         reminder_service_2 = reminder_service.__class__()
-        now = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 14, 0, 0, tzinfo=app_tz)
         due = reminder_service_2.get_due_reminders([weekly_schedule])
         assert len(due) == 1
         assert due[0][1] == "hour_before"
-        
+
         # Test at on_time → no reminder
         reminder_service_3 = reminder_service.__class__()
-        now = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 16, 15, 0, 0, tzinfo=app_tz)
         due = reminder_service_3.get_due_reminders([weekly_schedule])
         assert len(due) == 0
-    
-    def test_custom_schedule_with_preferences(self, reminder_service, custom_schedule, app_tz):
+
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_custom_schedule_with_preferences(self, mock_now, reminder_service, custom_schedule, app_tz):
         """Custom schedule respects notification preferences."""
         custom_schedule.notify_24h = False
         custom_schedule.notify_1h = True
         custom_schedule.notify_on_time = True
-        
+
         # 24h before: should be skipped
-        now = datetime(2026, 3, 19, 10, 30, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 19, 10, 30, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([custom_schedule])
         assert not any(r[1] == "day_before" for r in due)
-        
+
         # 1h before: should fire
         reminder_service_2 = reminder_service.__class__()
-        now = datetime(2026, 3, 20, 9, 30, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 20, 9, 30, 0, tzinfo=app_tz)
         due = reminder_service_2.get_due_reminders([custom_schedule])
         assert any(r[1] == "hour_before" for r in due)
-        
+
         # On time: should fire
         reminder_service_3 = reminder_service.__class__()
-        now = datetime(2026, 3, 20, 10, 30, 0, tzinfo=app_tz)
+        mock_now.return_value = datetime(2026, 3, 20, 10, 30, 0, tzinfo=app_tz)
         due = reminder_service_3.get_due_reminders([custom_schedule])
         assert any(r[1] == "on_time" for r in due)
 
@@ -385,7 +399,7 @@ class TestDeviceServiceUpdate:
         schedule.id = 301
         schedule.device_id = "tank1"
         schedule.schedule_type = "weekly"
-        schedule.day_of_week = 1
+        schedule.days_of_week = "1"
         schedule.schedule_time = time_type(15, 0)
         schedule.notes = "Original"
         schedule.enabled = True
@@ -430,6 +444,41 @@ class TestDeviceServiceUpdate:
         assert result is None
 
 
+class TestDeviceServiceDetail:
+    """Test DeviceService.get_device_detail() with a custom-date water schedule."""
+
+    def test_custom_schedule_date_is_not_re_isoformatted(self):
+        """schedule_date is stored as a plain 'YYYY-MM-DD' string (WaterScheduleModel
+        column is String(10), not a Date column) — calling .isoformat() on it, as if
+        it were a date object, raises AttributeError for any custom-date schedule.
+        """
+        mock_session = Mock()
+        device = Mock()
+        mock_session.query.return_value.filter.return_value.first.return_value = None  # light schedule: none
+
+        water_schedule = Mock(spec=WaterScheduleModel)
+        water_schedule.id = 601
+        water_schedule.device_id = "tank1"
+        water_schedule.schedule_type = "custom"
+        water_schedule.days_of_week = None
+        water_schedule.schedule_date = "2026-03-20"
+        water_schedule.schedule_time = time_type(10, 30)
+        water_schedule.notes = None
+        water_schedule.completed = False
+        water_schedule.enabled = True
+        water_schedule.created_at = None
+        water_schedule.updated_at = None
+        mock_session.query.return_value.filter_by.return_value.all.return_value = [water_schedule]
+
+        service = DeviceService(mock_session)
+        service.device_repo = Mock()
+        service.device_repo.get_by_id.return_value = device
+
+        detail = service.get_device_detail("tank1")
+
+        assert detail["water_schedules"][0]["schedule_date"] == "2026-03-20"
+
+
 # ---------------------------------------------------------------------------
 # Timezone Tests
 # ---------------------------------------------------------------------------
@@ -438,22 +487,25 @@ class TestDeviceServiceUpdate:
 class TestTimezoneHandling:
     """Test IST timezone handling in reminders."""
 
-    def test_reminder_fires_in_ist_timezone(self, reminder_service, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_reminder_fires_in_ist_timezone(self, mock_now, reminder_service, app_tz):
         """Reminders use IST (Asia/Kolkata) for scheduling."""
         # Make sure the service respects app timezone
         schedule = Mock(spec=WaterScheduleModel)
         schedule.id = 401
         schedule.schedule_type = "weekly"
-        schedule.day_of_week = 1  # Monday
+        schedule.days_of_week = "1"  # Monday
         schedule.schedule_time = time_type(9, 0)  # 9:00 AM
         schedule.enabled = True
         schedule.completed = False
+        schedule.notify_24h = True
+        schedule.notify_1h = True
+        schedule.notify_on_time = True
 
         # Monday 9:00 AM IST
-        now_ist = datetime(2026, 3, 16, 9, 0, 0, tzinfo=app_tz)
-        # Should fire on_time
+        mock_now.return_value = datetime(2026, 3, 16, 9, 0, 0, tzinfo=app_tz)
         due = reminder_service.get_due_reminders([schedule])
-        
+
         # Filter for on_time reminder
         on_time_reminders = [r for r in due if r[1] == "on_time"]
         assert len(on_time_reminders) == 1
@@ -467,7 +519,8 @@ class TestTimezoneHandling:
 class TestWaterScheduleFlow:
     """End-to-end flow: create → enable/disable → fire reminders."""
 
-    def test_create_and_immediately_check_reminders(self, reminder_service, app_tz):
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_create_and_immediately_check_reminders(self, mock_now, reminder_service, app_tz):
         """Create a schedule for tomorrow and check if day_before fires today."""
         tomorrow = (datetime.now(app_tz) + timedelta(days=1)).date()
         tomorrow_str = tomorrow.isoformat()
@@ -480,9 +533,10 @@ class TestWaterScheduleFlow:
         schedule.enabled = True
         schedule.completed = False
 
-        # Check today
-        today_at_2pm = datetime.now(app_tz).replace(hour=14, minute=0, second=0)
-        # Since tomorrow 2:00 PM is 24 h away, "day_before" should fire
+        # Today at 2:00 PM — since tomorrow 2:00 PM is 24 h away, "day_before" should fire
+        today_at_2pm = datetime.now(app_tz).replace(hour=14, minute=0, second=0, microsecond=0)
+        mock_now.return_value = today_at_2pm
+
         due = reminder_service.get_due_reminders([schedule])
         day_before_reminders = [r for r in due if r[1] == "day_before"]
         assert len(day_before_reminders) == 1

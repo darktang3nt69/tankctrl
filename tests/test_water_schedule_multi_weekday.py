@@ -23,7 +23,8 @@ class MockSchedule:
     """Mock WaterScheduleModel for testing."""
     def __init__(self, id=1, schedule_type='weekly', days_of_week=None,
                  schedule_date=None, schedule_time='12:00',
-                 enabled=True, completed=False, device_id='tank1'):
+                 enabled=True, completed=False, device_id='tank1',
+                 notify_24h=True, notify_1h=True, notify_on_time=True):
         self.id = id
         self.device_id = device_id
         self.schedule_type = schedule_type
@@ -33,6 +34,10 @@ class MockSchedule:
         self.enabled = enabled
         self.completed = completed
         self.notes = "Test schedule"
+        # Notification preferences (Phase 1/2) - default all enabled
+        self.notify_24h = notify_24h
+        self.notify_1h = notify_1h
+        self.notify_on_time = notify_on_time
 
 
 def assert_due(actual, expected_count, expected_types=None):
