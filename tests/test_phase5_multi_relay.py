@@ -53,7 +53,7 @@ class CommandServiceRelayValidationTests(unittest.TestCase):
         relay_name = service._extract_relay_name("reboot_device")
         assert relay_name is None
 
-    @patch("src.services.command_service.RelayConfigService")
+    @patch("src.services.relay_config_service.RelayConfigService")
     def test_validate_relay_command_success(self, relay_service_cls: MagicMock):
         """Test successful relay command validation."""
         session = MagicMock()
@@ -72,7 +72,7 @@ class CommandServiceRelayValidationTests(unittest.TestCase):
             value="on",
         )
 
-    @patch("src.services.command_service.RelayConfigService")
+    @patch("src.services.relay_config_service.RelayConfigService")
     def test_validate_relay_command_invalid_value(self, relay_service_cls: MagicMock):
         """Test validation fails for invalid relay value."""
         session = MagicMock()
@@ -93,7 +93,7 @@ class CommandServiceRelayValidationTests(unittest.TestCase):
         
         assert "Invalid relay value" in str(ctx.exception)
 
-    @patch("src.services.command_service.RelayConfigService")
+    @patch("src.services.relay_config_service.RelayConfigService")
     def test_validate_relay_command_relay_not_found(self, relay_service_cls: MagicMock):
         """Test validation fails when relay doesn't exist."""
         session = MagicMock()
@@ -112,7 +112,7 @@ class CommandServiceRelayValidationTests(unittest.TestCase):
         
         assert "Relay 'pump' not found" in str(ctx.exception)
 
-    @patch("src.services.command_service.RelayConfigService")
+    @patch("src.services.relay_config_service.RelayConfigService")
     @patch("src.services.command_service.mqtt_client")
     @patch("src.services.command_service.event_publisher")
     def test_send_pump_command_success(
@@ -182,15 +182,51 @@ class ShadowServiceMultiRelayTests(unittest.TestCase):
         )
         
         command_service = command_service_cls.return_value
-        
+        command_service.get_command_history.return_value = []
+
         service.reconcile_shadow("tank1")
-        
+
         # Should send one command for pump (only delta)
         command_service.send_command.assert_called_once()
         call_args = command_service.send_command.call_args
         assert call_args[1]["device_id"] == "tank1"
         assert call_args[1]["command"] == "set_pump"
         assert call_args[1]["value"] == "on"
+
+    @patch("src.services.shadow_service.event_publisher")
+    @patch("src.services.shadow_service.CommandService")
+    def test_reconcile_shadow_does_not_pass_explicit_version_per_relay(
+        self,
+        command_service_cls: MagicMock,
+        event_publisher: MagicMock,
+    ):
+        """Each relay's command must get its own version from CommandService's
+        own auto-increment (based on command history) rather than a single
+        version shared by every command sent in this reconciliation pass —
+        the firmware rejects any command whose version isn't strictly greater
+        than the last one it processed, so two commands sharing one version
+        means only the first ever lands.
+        """
+        session = MagicMock()
+        service = ShadowService(session)
+        service.shadow_repo = MagicMock()
+
+        # Two relays out of sync at once (e.g. after a reboot).
+        service.shadow_repo.get_by_device_id.return_value = DeviceShadow(
+            device_id="tank1",
+            desired={"light": "on", "pump": "on"},
+            reported={"light": "off", "pump": "off"},
+            version=5,
+        )
+
+        command_service = command_service_cls.return_value
+        command_service.get_command_history.return_value = []
+
+        service.reconcile_shadow("tank1")
+
+        assert command_service.send_command.call_count == 2
+        for call in command_service.send_command.call_args_list:
+            assert "version" not in call.kwargs
 
     @patch("src.services.shadow_service.event_publisher")
     def test_handle_reported_state_multi_relay_changes(
@@ -245,9 +281,9 @@ class ShadowServiceMultiRelayTests(unittest.TestCase):
 class DeviceServiceMultiRelayInitializationTests(unittest.TestCase):
     """Tests for DeviceService multi-relay initialization."""
 
-    @patch("src.services.device_service.RelayConfigService")
+    @patch("src.services.relay_config_service.RelayConfigService")
     @patch("src.services.device_service.event_publisher")
-    @patch("src.services.device_service.SchedulingService")
+    @patch("src.services.scheduling_service.SchedulingService")
     def test_register_device_initializes_multi_relay_shadow(
         self,
         scheduling_service_cls: MagicMock,

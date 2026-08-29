@@ -8,6 +8,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from src.domain.command import CommandStatus
 from src.domain.device_shadow import DeviceShadow
 from src.infrastructure.db.database import db
 from src.infrastructure.events.event_publisher import event_publisher
@@ -79,17 +80,43 @@ class ShadowService:
 
             command_service = CommandService(self.session)
 
+            # Commands already in flight for this device — skip re-sending
+            # the same (command, value) pair while one is still pending or
+            # sent, rather than spamming a duplicate every reconciliation tick.
+            recent_commands = command_service.get_command_history(device_id, limit=20)
+            inflight = {
+                (c.command, c.value)
+                for c in recent_commands
+                if c.status in (CommandStatus.PENDING, CommandStatus.SENT)
+            }
+
             # Send command for each mismatched relay
             for relay_name, desired_value in delta.items():
                 command_name = f"set_{relay_name}"
                 command_value = str(desired_value)
 
+                if (command_name, command_value) in inflight:
+                    logger.debug(
+                        "shadow_delta_command_already_inflight",
+                        device_id=device_id,
+                        relay_name=relay_name,
+                        command=command_name,
+                        value=command_value,
+                    )
+                    continue
+
                 try:
-                    command_service.send_command(
+                    # No explicit version: let CommandService assign its own
+                    # auto-incrementing version (from command history), same
+                    # as route-driven commands. A shared version across the
+                    # relays in this loop would mean the device — which
+                    # rejects any command whose version isn't strictly
+                    # greater than the last one it processed — only ever
+                    # accepts the first of them.
+                    sent = command_service.send_command(
                         device_id=device_id,
                         command=command_name,
                         value=command_value,
-                        version=shadow.version + 1,
                     )
 
                     logger.info(
@@ -99,7 +126,7 @@ class ShadowService:
                         desired=desired_value,
                         reported=shadow.reported.get(relay_name),
                         command=command_name,
-                        version=shadow.version + 1,
+                        version=sent.version,
                     )
                 except Exception as e:
                     logger.error(

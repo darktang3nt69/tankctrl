@@ -118,6 +118,10 @@ class ReportedStateHandler(MessageHandler):
             # Update shadow with reported state
             shadow_service.handle_reported_state(device_id, payload)
 
+            # Reconcile immediately — don't wait for the next heartbeat or
+            # the periodic scheduler tick to correct any remaining drift.
+            shadow_service.reconcile_shadow(device_id)
+
             # Mark matching open commands as executed based on reported state
             command_service = CommandService(session)
             recent_commands = command_service.get_command_history(device_id, limit=20)

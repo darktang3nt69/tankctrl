@@ -65,11 +65,15 @@ class ShadowServiceReconciliationTests(unittest.TestCase):
 
         service.reconcile_shadow("tank1")
 
+        # No explicit version: CommandService.send_command assigns its own
+        # auto-incrementing version from command history, same as route-driven
+        # commands (set_light/set_pump). Passing a version here is what caused
+        # every relay's command in a single reconciliation pass to share one
+        # non-advancing number.
         command_service.send_command.assert_called_once_with(
             device_id="tank1",
             command="set_light",
             value="on",
-            version=11,
         )
 
 
