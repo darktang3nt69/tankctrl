@@ -784,7 +784,7 @@ void handleConfigMessage(byte* payload, unsigned int length) {
   }
   
   JsonArray relayArray = doc["relays"];
-  if (!relayArray.is<JsonArray>()) {
+  if (relayArray.isNull()) {
     Serial.println("[Config] ERROR: 'relays' is not an array");
     return;
   }
@@ -926,6 +926,11 @@ void handleCommand(JsonDocument& doc) {
     handleSetSchedule(doc);
   } else if (strcmp(command, "reboot_device") == 0) {
     handleRebootDevice();
+  } else if (strncmp(command, "set_", 4) == 0) {
+    // Generic "set_<relay_name>" commands (e.g. "set_heater") — the backend's
+    // shadow reconciliation names commands this way for any relay beyond
+    // light/pump, rather than using the "set_relay" + relay_name field form.
+    handleSetNamedRelay(command + 4, doc);
   } else {
     Serial.print("Unknown command: ");
     Serial.println(command);
@@ -968,25 +973,44 @@ void handleSetPump(JsonDocument& doc) {
   publishRelayState();
 }
 
+// Look up a relay by name and, if found, set its state and report it.
+// Shared by both relay-command dispatch paths: "set_relay" (relay_name +
+// value fields) and the generic "set_<relay_name>" (value field only).
+void applyRelayValue(const char* relayName, const char* value) {
+  int relayIdx = findRelayIndex(relayName);
+
+  if (relayIdx < 0) {
+    Serial.print("Relay '");
+    Serial.print(relayName);
+    Serial.println("' not found");
+    return;
+  }
+
+  setRelayState(relayIdx, value);
+  publishRelayState();
+}
+
 void handleSetRelay(JsonDocument& doc) {
   if (!doc.containsKey("relay_name") || !doc.containsKey("value")) {
     Serial.println("set_relay: missing relay_name or value");
     return;
   }
-  
+
   const char* relayName = doc["relay_name"];
   const char* value = doc["value"];
-  int relayIdx = findRelayIndex(relayName);
-  
-  if (relayIdx < 0) {
-    Serial.print("set_relay: relay '");
+  applyRelayValue(relayName, value);
+}
+
+void handleSetNamedRelay(const char* relayName, JsonDocument& doc) {
+  if (!doc.containsKey("value")) {
+    Serial.print("set_");
     Serial.print(relayName);
-    Serial.println("' not found");
+    Serial.println(": missing value");
     return;
   }
-  
-  setRelayState(relayIdx, value);
-  publishRelayState();
+
+  const char* value = doc["value"];
+  applyRelayValue(relayName, value);
 }
 
 void handleSetSchedule(JsonDocument& doc) {
