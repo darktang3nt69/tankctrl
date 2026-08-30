@@ -27,19 +27,16 @@ no evidence of actual load pain yet.
 
 ### Data model
 
-Add two columns to `device_relay_config` (migration, next available number
-after 013 — check `migrations/` before numbering, this repo has had number
-collisions before):
+No production data exists yet, so no ALTER-migration layering — edit
+`migrations/012_create_relay_config_table.sql` in place, adding the two
+columns directly into the `CREATE TABLE`:
 
 ```sql
-ALTER TABLE device_relay_config
-  ADD COLUMN fail_safe_default VARCHAR(10) NOT NULL,
-  ADD COLUMN cutoff_ceiling_seconds INTEGER;
-
-ALTER TABLE device_relay_config
-  ADD CONSTRAINT valid_fail_safe_default CHECK (fail_safe_default IN ('on', 'off'));
-ALTER TABLE device_relay_config
-  ADD CONSTRAINT valid_cutoff_ceiling CHECK (cutoff_ceiling_seconds IS NULL OR cutoff_ceiling_seconds > 0);
+    fail_safe_default VARCHAR(10) NOT NULL,
+    cutoff_ceiling_seconds INTEGER,
+    ...
+    CONSTRAINT valid_fail_safe_default CHECK (fail_safe_default IN ('on', 'off')),
+    CONSTRAINT valid_cutoff_ceiling CHECK (cutoff_ceiling_seconds IS NULL OR cutoff_ceiling_seconds > 0),
 ```
 
 `fail_safe_default` has no schema default — matches the spec's provisioning
@@ -47,6 +44,9 @@ rule ("no relay ships on the global default"). `cutoff_ceiling_seconds` is
 nullable; NULL means no ceiling (e.g. a filter/pump relay, which fails open).
 The API key is still required in the request payload (can carry an explicit
 `null`), so a caller can't silently omit the decision.
+
+Anyone with a local DB already run against the old 012 needs to drop/recreate
+it — acceptable since there's no real data to preserve.
 
 ### Domain / service / API
 
