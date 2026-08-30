@@ -12,6 +12,7 @@ from src.infrastructure.db.database import db
 from src.infrastructure.events.event_publisher import event_publisher
 from src.domain.event import telemetry_received_event
 from src.repository.telemetry_repository import TelemetryRepository
+from src.services._errors import log_on_error
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -162,7 +163,7 @@ class TelemetryService:
         Returns:
             List of telemetry data points
         """
-        try:
+        with log_on_error(logger, "get_device_telemetry_failed", device_id=device_id):
             if metric_name:
                 # Get specific metric
                 return self.repo.get_by_metric(
@@ -177,13 +178,6 @@ class TelemetryService:
                     limit=limit,
                     hours=hours,
                 )
-        except Exception as e:
-            logger.error(
-                "get_device_telemetry_failed",
-                device_id=device_id,
-                error=str(e),
-            )
-            raise
 
     def get_hourly_summary(
         self,
@@ -202,18 +196,11 @@ class TelemetryService:
         Returns:
             List of hourly aggregated records with min/max/avg
         """
-        try:
+        with log_on_error(logger, "get_hourly_summary_failed", device_id=device_id):
             return self.repo.get_hourly_rollup(
                 device_id=device_id,
                 hours=hours,
             )
-        except Exception as e:
-            logger.error(
-                "get_hourly_summary_failed",
-                device_id=device_id,
-                error=str(e),
-            )
-            raise
 
     def close(self) -> None:
         """Close the session."""

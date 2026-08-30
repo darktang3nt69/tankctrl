@@ -2,7 +2,6 @@
 Service for managing device push tokens and sending FCM notifications.
 """
 import requests
-import json
 import google.auth
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
@@ -11,6 +10,7 @@ FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 FCM_ENDPOINT = "https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
 from src.repository.device_push_token_repository import DevicePushTokenRepository
 from src.config.settings import settings
+from src.services._errors import log_on_error
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -27,17 +27,14 @@ class PushNotificationService:
             self._credentials = service_account.Credentials.from_service_account_file(
                 self.service_account_path, scopes=[FCM_SCOPE]
             )
-        try:
+        with log_on_error(
+            logger,
+            "fcm_auth_error",
+            service_account_path=self.service_account_path,
+            hint="Check that the service account JSON is valid, present at the path, and that the container/system clock is correct",
+        ):
             self._credentials.refresh(Request())
             return self._credentials.token
-        except Exception as e:
-            logger.error(
-                "fcm_auth_error",
-                error=str(e),
-                service_account_path=self.service_account_path,
-                hint="Check that the service account JSON is valid, present at the path, and that the container/system clock is correct",
-            )
-            raise
 
     def send_fcm_notification(self, token: str, title: str, body: str, data: dict = None, notification_type: str = "info") -> bool:
         """Send a push notification to a single device via FCM."""

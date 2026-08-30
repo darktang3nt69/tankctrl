@@ -41,6 +41,10 @@ def generate_device_secret(length: int = 16) -> str:
     return secrets.token_hex(length // 2)
 
 
+def _iso(dt) -> Optional[str]:
+    return dt.isoformat() if dt else None
+
+
 class DeviceService:
     """Service for device business logic."""
 
@@ -98,12 +102,24 @@ class DeviceService:
         # Create associated shadow (initially empty, will be populated after relays are registered)
         shadow = DeviceShadow(device_id=device_id)
         self.shadow_repo.create(shadow)
-        
-        # Create default light schedule (2 PM to 8 PM)
+
+        self._create_default_schedule(device_id)
+        created_relays = self._create_default_relays_and_shadow(device_id, shadow)
+
+        logger.info("device_registered", device_id=device_id, relay_count=len(created_relays))
+
+        # Publish device_registered event
+        event = device_registered_event(device_id=device_id)
+        event_publisher.publish(event)
+
+        return registered
+
+    def _create_default_schedule(self, device_id: str) -> None:
+        """Create the default light schedule (2 PM to 8 PM) for a newly registered device."""
         try:
             from datetime import time
             from src.services.scheduling_service import SchedulingService
-            
+
             scheduling_service = SchedulingService(self.session)
             scheduling_service.create_schedule(
                 device_id=device_id,
@@ -115,25 +131,26 @@ class DeviceService:
         except Exception as e:
             logger.warning("failed_to_create_default_schedule", device_id=device_id, error=str(e))
 
-        # Create default relay configurations (light:D4, pump:D12)
+    def _create_default_relays_and_shadow(self, device_id: str, shadow: DeviceShadow) -> list:
+        """Create default relay configs (light:D4, pump:D12) and seed the shadow's desired state."""
         try:
             from src.services.relay_config_service import RelayConfigService
-            
+
             relay_service = RelayConfigService(self.session)
             created_relays = relay_service.register_default_relays(device_id)
             logger.info("default_relay_configs_created", device_id=device_id, count=len(created_relays))
-            
+
             # Initialize shadow with multi-relay state
             # Set all relays to their default states (typically "off" for safety)
             if created_relays:
                 initial_desired_state = {}
                 for relay in created_relays:
                     initial_desired_state[relay.relay_name] = relay.default_state
-                
+
                 # Update shadow with initial desired state
                 shadow.update_desired(initial_desired_state)
                 self.shadow_repo.update(shadow)
-                
+
                 logger.info(
                     "shadow_initialized_with_relays",
                     device_id=device_id,
@@ -141,16 +158,10 @@ class DeviceService:
                     initial_state=initial_desired_state,
                     version=shadow.version,
                 )
+            return created_relays
         except Exception as e:
             logger.warning("failed_to_create_default_relay_configs", device_id=device_id, error=str(e))
-
-        logger.info("device_registered", device_id=device_id, relay_count=len(created_relays) if created_relays else 0)
-        
-        # Publish device_registered event
-        event = device_registered_event(device_id=device_id)
-        event_publisher.publish(event)
-        
-        return registered
+            return []
 
     def get_device(self, device_id: str) -> Optional[Device]:
         """
@@ -410,8 +421,8 @@ class DeviceService:
             "description": device.description,
             "status": device.status,
             "firmware_version": device.firmware_version,
-            "created_at": device.created_at.isoformat() if device.created_at else None,
-            "last_seen": device.last_seen.isoformat() if device.last_seen else None,
+            "created_at": _iso(device.created_at),
+            "last_seen": _iso(device.last_seen),
             "uptime_ms": device.uptime_ms,
             "rssi": device.rssi,
             "wifi_status": device.wifi_status,
@@ -423,8 +434,8 @@ class DeviceService:
                 "enabled": light_schedule.enabled,
                 "start_time": str(light_schedule.on_time),
                 "end_time": str(light_schedule.off_time),
-                "created_at": light_schedule.created_at.isoformat() if light_schedule.created_at else None,
-                "updated_at": light_schedule.updated_at.isoformat() if light_schedule.updated_at else None,
+                "created_at": _iso(light_schedule.created_at),
+                "updated_at": _iso(light_schedule.updated_at),
             } if light_schedule else None,
             "water_schedules": [
                 {
@@ -437,8 +448,8 @@ class DeviceService:
                     "notes": ws.notes,
                     "completed": ws.completed,
                     "enabled": ws.enabled,
-                    "created_at": ws.created_at.isoformat() if ws.created_at else None,
-                    "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
+                    "created_at": _iso(ws.created_at),
+                    "updated_at": _iso(ws.updated_at),
                 }
                 for ws in water_schedules
             ],

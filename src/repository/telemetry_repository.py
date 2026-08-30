@@ -4,13 +4,14 @@ Repository layer for telemetry data.
 Handles database access for telemetry stored in TimescaleDB.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 import json
 
 from sqlalchemy import text, desc
 from sqlalchemy.orm import Session
 
+from src.repository._errors import log_on_error
 from src.domain.command import Command, CommandStatus
 from src.infrastructure.db.models import CommandModel
 from src.utils.datetime_utils import isoformat_in_app_timezone
@@ -39,7 +40,7 @@ class CommandRepository:
         Raises:
             Exception: If creation fails
         """
-        try:
+        with log_on_error(self.session, logger, "command_creation_failed"):
             db_command = CommandModel(
                 device_id=command.device_id,
                 command=command.command,
@@ -59,10 +60,6 @@ class CommandRepository:
                 command=command.command,
             )
             return command
-        except Exception as e:
-            self.session.rollback()
-            logger.error("command_creation_failed", error=str(e))
-            raise
 
     def get_by_id(self, command_id: int) -> Optional[Command]:
         """
@@ -144,7 +141,7 @@ class CommandRepository:
         Returns:
             Updated command or None if not found
         """
-        try:
+        with log_on_error(self.session, logger, "command_status_update_failed", command_id=command_id):
             db_command = self.session.query(CommandModel).filter(
                 CommandModel.id == command_id
             ).first()
@@ -166,10 +163,6 @@ class CommandRepository:
                 status=status,
             )
             return self._model_to_domain(db_command)
-        except Exception as e:
-            self.session.rollback()
-            logger.error("command_status_update_failed", command_id=command_id, error=str(e))
-            raise
 
     def delete_for_device(self, device_id: str) -> int:
         """
@@ -181,17 +174,13 @@ class CommandRepository:
         Returns:
             Number of deleted commands
         """
-        try:
+        with log_on_error(self.session, logger, "commands_delete_failed", device_id=device_id):
             deleted = self.session.query(CommandModel).filter(
                 CommandModel.device_id == device_id
             ).delete()
             self.session.commit()
             logger.info("commands_deleted", device_id=device_id, count=deleted)
             return deleted
-        except Exception as e:
-            self.session.rollback()
-            logger.error("commands_delete_failed", device_id=device_id, error=str(e))
-            raise
 
     def _model_to_domain(self, db_command: CommandModel) -> Command:
         """Convert database model to domain model."""
@@ -236,7 +225,7 @@ class TelemetryRepository:
         Raises:
             Exception: If insertion fails
         """
-        try:
+        with log_on_error(self.session, logger, "telemetry_insertion_failed", device_id=device_id):
             # Serialize metadata to JSON if present
             metadata_json = None
             if metadata:
@@ -266,7 +255,7 @@ class TelemetryRepository:
                 },
             )
             self.session.commit()
-            
+
             logger.debug(
                 "telemetry_inserted",
                 device_id=device_id,
@@ -274,10 +263,6 @@ class TelemetryRepository:
                 humidity=humidity,
                 pressure=pressure,
             )
-        except Exception as e:
-            self.session.rollback()
-            logger.error("telemetry_insertion_failed", device_id=device_id, error=str(e))
-            raise
 
     def get_recent(
         self,
@@ -406,6 +391,26 @@ class TelemetryRepository:
             )
             raise
 
+    def _rollup_row(self, row, coerce_float: bool = False) -> dict:
+        def val(x):
+            return (float(x) if x else None) if coerce_float else x
+
+        return {
+            "hour": isoformat_in_app_timezone(row[0]),
+            "device_id": row[1],
+            "temperature": {
+                "avg": val(row[2]),
+                "max": val(row[3]),
+                "min": val(row[4]),
+            },
+            "humidity": {
+                "avg": val(row[5]),
+                "max": val(row[6]),
+                "min": val(row[7]),
+            },
+            "sample_count": row[8],
+        }
+
     def get_hourly_rollup(
         self,
         device_id: str,
@@ -448,24 +453,8 @@ class TelemetryRepository:
             ).fetchall()
             
             # Convert to list of dicts
-            rollup_list = []
-            for row in results:
-                rollup_list.append({
-                    "hour": isoformat_in_app_timezone(row[0]),
-                    "device_id": row[1],
-                    "temperature": {
-                        "avg": row[2],
-                        "max": row[3],
-                        "min": row[4],
-                    },
-                    "humidity": {
-                        "avg": row[5],
-                        "max": row[6],
-                        "min": row[7],
-                    },
-                    "sample_count": row[8],
-                })
-            
+            rollup_list = [self._rollup_row(row) for row in results]
+
             logger.debug(
                 "hourly_rollup_retrieved",
                 device_id=device_id,
@@ -510,24 +499,8 @@ class TelemetryRepository:
                 ).fetchall()
                 
                 # Convert to list of dicts
-                rollup_list = []
-                for row in results:
-                    rollup_list.append({
-                        "hour": isoformat_in_app_timezone(row[0]),
-                        "device_id": row[1],
-                        "temperature": {
-                            "avg": float(row[2]) if row[2] else None,
-                            "max": float(row[3]) if row[3] else None,
-                            "min": float(row[4]) if row[4] else None,
-                        },
-                        "humidity": {
-                            "avg": float(row[5]) if row[5] else None,
-                            "max": float(row[6]) if row[6] else None,
-                            "min": float(row[7]) if row[7] else None,
-                        },
-                        "sample_count": row[8],
-                    })
-                
+                rollup_list = [self._rollup_row(row, coerce_float=True) for row in results]
+
                 logger.debug(
                     "hourly_rollup_retrieved",
                     device_id=device_id,
@@ -556,7 +529,7 @@ class TelemetryRepository:
         Returns:
             Number of deleted telemetry rows
         """
-        try:
+        with log_on_error(self.session, logger, "telemetry_delete_failed", device_id=device_id):
             result = self.session.execute(
                 text("DELETE FROM telemetry WHERE device_id = :device_id"),
                 {"device_id": device_id},
@@ -565,8 +538,4 @@ class TelemetryRepository:
             deleted = result.rowcount or 0
             logger.info("telemetry_deleted", device_id=device_id, count=deleted)
             return deleted
-        except Exception as e:
-            self.session.rollback()
-            logger.error("telemetry_delete_failed", device_id=device_id, error=str(e))
-            raise
 

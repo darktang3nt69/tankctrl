@@ -5,7 +5,7 @@ Database initialization and session management for TankCtl.
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session, scoped_session
+from sqlalchemy.orm import sessionmaker, Session
 
 from src.config.settings import settings
 from src.infrastructure.db.models import (

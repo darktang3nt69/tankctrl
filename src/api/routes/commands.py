@@ -12,13 +12,14 @@ POST /devices/{device_id}/request-status - Request immediate status update
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
+from src.api.routes._errors import raise_500
 from src.api.schemas import (
     CommandRequest,
     CommandResponse,
     LightStateRequest,
     PumpStateRequest,
 )
-from src.infrastructure.db.database import db
+from src.infrastructure.db.database import get_db
 from src.services.command_service import CommandService
 from src.services.shadow_service import ShadowService
 from src.utils.datetime_utils import isoformat_in_app_timezone
@@ -29,13 +30,16 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/devices", tags=["commands"])
 
 
-def get_db():
-    """Dependency: Get database session."""
-    session = db.get_session()
-    try:
-        yield session
-    finally:
-        session.close()
+def _serialize_command(command) -> CommandResponse:
+    return CommandResponse(
+        command_id=str(command.id) if command.id is not None else None,
+        device_id=command.device_id,
+        command=command.command,
+        value=command.value,
+        version=command.version,
+        status=command.status,
+        created_at=isoformat_in_app_timezone(command.created_at),
+    )
 
 
 @router.post("/{device_id}/commands", response_model=CommandResponse, status_code=202)
@@ -75,24 +79,17 @@ def send_command(
             version=command.version,
         )
         
-        return CommandResponse(
-            command_id=str(command.id) if command.id is not None else None,
-            device_id=command.device_id,
-            command=command.command,
-            value=command.value,
-            version=command.version,
-            status=command.status,
-            created_at=isoformat_in_app_timezone(command.created_at),
-        )
-        
+        return _serialize_command(command)
+
     except Exception as e:
-        logger.error(
+        raise_500(
+            logger,
             "send_command_error",
+            detail="Failed to send command",
             device_id=device_id,
             command=request.command,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail="Failed to send command")
 
 
 @router.get("/{device_id}/commands", response_model=dict)
@@ -117,18 +114,7 @@ def get_command_history(
         command_service = CommandService(session)
         commands = command_service.get_command_history(device_id, limit=limit)
         
-        command_list = [
-            CommandResponse(
-                command_id=str(c.id) if c.id is not None else None,
-                device_id=c.device_id,
-                command=c.command,
-                value=c.value,
-                version=c.version,
-                status=c.status,
-                created_at=isoformat_in_app_timezone(c.created_at),
-            )
-            for c in commands
-        ]
+        command_list = [_serialize_command(c) for c in commands]
         
         return {
             "count": len(command_list),
@@ -136,8 +122,7 @@ def get_command_history(
         }
         
     except Exception as e:
-        logger.error("get_command_history_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "get_command_history_error", device_id=device_id, error=str(e))
 
 
 @router.post("/{device_id}/light", response_model=CommandResponse, status_code=202)
@@ -182,16 +167,8 @@ def set_light(
         )
         
         logger.info("light_command_sent", device_id=device_id, state=state)
-        
-        return CommandResponse(
-            command_id=str(command.id) if command.id is not None else None,
-            device_id=command.device_id,
-            command=command.command,
-            value=command.value,
-            version=command.version,
-            status=command.status,
-            created_at=isoformat_in_app_timezone(command.created_at),
-        )
+
+        return _serialize_command(command)
         
     except HTTPException:
         raise
@@ -199,8 +176,7 @@ def set_light(
         logger.warning("set_light_validation_error", device_id=device_id, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("set_light_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to set light")
+        raise_500(logger, "set_light_error", detail="Failed to set light", device_id=device_id, error=str(e))
 
 
 @router.post("/{device_id}/pump", response_model=CommandResponse, status_code=202)
@@ -245,16 +221,8 @@ def set_pump(
         )
         
         logger.info("pump_command_sent", device_id=device_id, state=state)
-        
-        return CommandResponse(
-            command_id=str(command.id) if command.id is not None else None,
-            device_id=command.device_id,
-            command=command.command,
-            value=command.value,
-            version=command.version,
-            status=command.status,
-            created_at=isoformat_in_app_timezone(command.created_at),
-        )
+
+        return _serialize_command(command)
         
     except HTTPException:
         raise
@@ -262,8 +230,7 @@ def set_pump(
         logger.warning("set_pump_validation_error", device_id=device_id, error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("set_pump_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to set pump")
+        raise_500(logger, "set_pump_error", detail="Failed to set pump", device_id=device_id, error=str(e))
 
 
 @router.post("/{device_id}/reboot", response_model=CommandResponse, status_code=202)
@@ -294,20 +261,11 @@ def reboot_device(
         )
         
         logger.info("reboot_command_sent", device_id=device_id)
-        
-        return CommandResponse(
-            command_id=str(command.id) if command.id is not None else None,
-            device_id=command.device_id,
-            command=command.command,
-            value=command.value,
-            version=command.version,
-            status=command.status,
-            created_at=isoformat_in_app_timezone(command.created_at),
-        )
+
+        return _serialize_command(command)
         
     except Exception as e:
-        logger.error("reboot_device_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to reboot device")
+        raise_500(logger, "reboot_device_error", detail="Failed to reboot device", device_id=device_id, error=str(e))
 
 
 @router.post("/{device_id}/request-status", response_model=CommandResponse, status_code=202)
@@ -337,17 +295,8 @@ def request_status(
         )
         
         logger.info("request_status_command_sent", device_id=device_id)
-        
-        return CommandResponse(
-            command_id=str(command.id) if command.id is not None else None,
-            device_id=command.device_id,
-            command=command.command,
-            value=command.value,
-            version=command.version,
-            status=command.status,
-            created_at=isoformat_in_app_timezone(command.created_at),
-        )
+
+        return _serialize_command(command)
         
     except Exception as e:
-        logger.error("request_status_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to request status")
+        raise_500(logger, "request_status_error", detail="Failed to request status", device_id=device_id, error=str(e))

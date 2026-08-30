@@ -94,11 +94,6 @@ class WaterScheduleRepository:
             schedule.schedule_time = time.fromisoformat(schedule_data["schedule_time"])
         if "schedule_type" in schedule_data:
             schedule.schedule_type = schedule_data["schedule_type"]
-            # Clear type-specific fields when changing schedule_type
-            if schedule_data["schedule_type"] == "weekly":
-                schedule.schedule_date = None
-            elif schedule_data["schedule_type"] == "custom":
-                schedule.days_of_week = None
         if "days_of_week" in schedule_data:
             # Convert days_of_week list to comma-separated string
             if schedule_data["days_of_week"]:

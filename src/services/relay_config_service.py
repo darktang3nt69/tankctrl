@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from src.domain.relay_config import RelayConfig
+from src.services._errors import log_on_error
 from src.infrastructure.db.database import db
 from src.infrastructure.mqtt.mqtt_client import mqtt_client
 from src.infrastructure.mqtt.mqtt_topics import MQTTTopics
@@ -48,7 +49,7 @@ class RelayConfigService:
         Raises:
             ValueError: If device not found or relays already exist
         """
-        try:
+        with log_on_error(logger, "register_default_relays_failed", device_id=device_id):
             # Verify device exists
             device = self.device_repo.get_by_id(device_id)
             if not device:
@@ -97,14 +98,6 @@ class RelayConfigService:
             )
             return created_relays
 
-        except Exception as e:
-            logger.error(
-                "register_default_relays_failed",
-                device_id=device_id,
-                error=str(e)
-            )
-            raise
-
     def get_device_relay_config(
         self,
         device_id: str
@@ -123,7 +116,7 @@ class RelayConfigService:
         Raises:
             ValueError: If device not found
         """
-        try:
+        with log_on_error(logger, "get_device_relay_config_failed", device_id=device_id):
             # Verify device exists
             device = self.device_repo.get_by_id(device_id)
             if not device:
@@ -143,14 +136,6 @@ class RelayConfigService:
                 relay_count=len(config_dict)
             )
             return config_dict
-
-        except Exception as e:
-            logger.error(
-                "get_device_relay_config_failed",
-                device_id=device_id,
-                error=str(e)
-            )
-            raise
 
     def push_config_to_device(self, device_id: str) -> bool:
         """
@@ -174,7 +159,7 @@ class RelayConfigService:
         Raises:
             ValueError: If device not found
         """
-        try:
+        with log_on_error(logger, "push_config_to_device_failed", device_id=device_id):
             # Get all relay configs
             config_dict = self.get_device_relay_config(device_id)
 
@@ -206,14 +191,6 @@ class RelayConfigService:
                 relay_count=len(config_dict)
             )
             return True
-
-        except Exception as e:
-            logger.error(
-                "push_config_to_device_failed",
-                device_id=device_id,
-                error=str(e)
-            )
-            raise
 
     def validate_relay_config(
         self,
@@ -300,7 +277,7 @@ class RelayConfigService:
         Raises:
             ValueError: If device not found, validation fails, or relay exists
         """
-        try:
+        with log_on_error(logger, "create_relay_config_failed", device_id=device_id, relay_name=relay_name):
             # Verify device exists
             device = self.device_repo.get_by_id(device_id)
             if not device:
@@ -341,15 +318,6 @@ class RelayConfigService:
             )
             return created
 
-        except Exception as e:
-            logger.error(
-                "create_relay_config_failed",
-                device_id=device_id,
-                relay_name=relay_name,
-                error=str(e)
-            )
-            raise
-
     def update_relay_config(
         self,
         device_id: str,
@@ -374,7 +342,7 @@ class RelayConfigService:
         Raises:
             ValueError: If relay not found or validation fails
         """
-        try:
+        with log_on_error(logger, "update_relay_config_failed", device_id=device_id, relay_name=relay_name):
             # Get existing relay
             existing = self.relay_repo.get_relay(device_id, relay_name)
             if not existing:
@@ -418,15 +386,6 @@ class RelayConfigService:
             )
             return updated
 
-        except Exception as e:
-            logger.error(
-                "update_relay_config_failed",
-                device_id=device_id,
-                relay_name=relay_name,
-                error=str(e)
-            )
-            raise
-
     def delete_relay_config(
         self,
         device_id: str,
@@ -445,7 +404,7 @@ class RelayConfigService:
         Raises:
             ValueError: If device not found
         """
-        try:
+        with log_on_error(logger, "delete_relay_config_failed", device_id=device_id, relay_name=relay_name):
             # Verify device exists
             device = self.device_repo.get_by_id(device_id)
             if not device:
@@ -471,12 +430,3 @@ class RelayConfigService:
                 )
 
             return deleted
-
-        except Exception as e:
-            logger.error(
-                "delete_relay_config_failed",
-                device_id=device_id,
-                relay_name=relay_name,
-                error=str(e)
-            )
-            raise

@@ -28,24 +28,23 @@ class DevicePushTokenResponse(BaseModel):
 
 @router.post("/mobile/push-token")
 def register_push_token(
-    req: RegisterTokenRequest,
-    db: Session = Depends(get_db),
+    request: RegisterTokenRequest,
+    session: Session = Depends(get_db),
 ):
-    repo = DevicePushTokenRepository(db)
+    repo = DevicePushTokenRepository(session)
     service = PushNotificationService(
         repo,
         settings.fcm_service_account_json,
         settings.fcm_project_id,
     )
-    service.upsert_device_token(req.device_id, req.token, req.platform)
+    service.upsert_device_token(request.device_id, request.token, request.platform)
     return {"status": "ok"}
 
 
 # Route to list all registered device push tokens
 @router.get("/mobile/push-token", response_model=list[DevicePushTokenResponse])
-def list_push_tokens(db: Session = Depends(get_db)):
-    repo = DevicePushTokenRepository(db)
-    rows = db.query(DevicePushTokenModel).all()
+def list_push_tokens(session: Session = Depends(get_db)):
+    rows = session.query(DevicePushTokenModel).all()
     return [
         DevicePushTokenResponse(
             device_id=row.device_id,
@@ -62,20 +61,20 @@ def list_push_tokens(db: Session = Depends(get_db)):
 def delete_push_token(
     token: str = Query(None, description="FCM token to delete"),
     device_id: str = Query(None, description="Device ID to delete all tokens for"),
-    db: Session = Depends(get_db),
+    session: Session = Depends(get_db),
 ):
-    repo = DevicePushTokenRepository(db)
+    repo = DevicePushTokenRepository(session)
     if token:
         repo.remove_token(token)
         return {"status": "deleted", "token": token}
     elif device_id:
         # Remove all tokens for this device_id
-        rows = db.query(DevicePushTokenModel).filter_by(device_id=device_id).all()
+        rows = session.query(DevicePushTokenModel).filter_by(device_id=device_id).all()
         count = 0
         for row in rows:
-            db.delete(row)
+            session.delete(row)
             count += 1
-        db.commit()
+        session.commit()
         return {"status": "deleted", "device_id": device_id, "count": count}
     else:
         raise HTTPException(status_code=400, detail="Must provide token or device_id")

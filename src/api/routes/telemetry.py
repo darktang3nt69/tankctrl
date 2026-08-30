@@ -9,6 +9,7 @@ GET /devices/{device_id}/telemetry/hourly - Get hourly summary
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
+from src.api.routes._errors import raise_500
 from src.infrastructure.db.database import db
 from src.services.telemetry_service import TelemetryService
 from src.utils.logger import get_logger
@@ -25,6 +26,11 @@ def get_db_telemetry():
         yield session
     finally:
         session.close()
+
+
+def _validate_limit(limit: int) -> None:
+    if limit < 1 or limit > 10000:
+        raise HTTPException(status_code=400, detail="Limit must be between 1 and 10000")
 
 
 @router.get("/{device_id}/telemetry", response_model=dict)
@@ -63,8 +69,7 @@ def get_telemetry(
     """
     try:
         # Validate inputs
-        if limit < 1 or limit > 10000:
-            raise HTTPException(status_code=400, detail="Limit must be between 1 and 10000")
+        _validate_limit(limit)
         
         if hours is not None and hours < 1:
             raise HTTPException(status_code=400, detail="Hours must be >= 1")
@@ -89,8 +94,7 @@ def get_telemetry(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("get_telemetry_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "get_telemetry_error", device_id=device_id, error=str(e))
 
 
 @router.get("/{device_id}/telemetry/{metric}", response_model=dict)
@@ -132,9 +136,8 @@ def get_metric(
                 status_code=400,
                 detail="Metric must be 'temperature', 'humidity', or 'pressure'"
             )
-        
-        if limit < 1 or limit > 10000:
-            raise HTTPException(status_code=400, detail="Limit must be between 1 and 10000")
+
+        _validate_limit(limit)
         
         logger.debug(
             "getting_metric",
@@ -167,13 +170,7 @@ def get_metric(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "get_metric_error",
-            device_id=device_id,
-            metric=metric,
-            error=str(e)
-        )
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "get_metric_error", device_id=device_id, metric=metric, error=str(e))
 
 
 @router.get("/{device_id}/telemetry/hourly/summary", response_model=dict)
@@ -240,10 +237,5 @@ def get_hourly_summary(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            "get_hourly_summary_error",
-            device_id=device_id,
-            error=str(e)
-        )
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "get_hourly_summary_error", device_id=device_id, error=str(e))
 

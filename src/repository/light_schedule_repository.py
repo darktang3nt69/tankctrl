@@ -4,7 +4,6 @@ Repository layer for light schedules.
 Handles database access for light schedule CRUD operations.
 """
 
-from datetime import time
 from typing import Optional
 
 from sqlalchemy.orm import Session

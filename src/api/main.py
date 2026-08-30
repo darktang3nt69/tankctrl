@@ -4,7 +4,7 @@ TankCtl API - RESTful interface for device management.
 FastAPI application with routes for device management, commands, and telemetry.
 """
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 

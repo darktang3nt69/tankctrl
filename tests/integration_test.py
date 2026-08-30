@@ -10,6 +10,7 @@ Demonstrates:
 """
 
 import json
+import time
 from datetime import datetime
 
 from src.config.settings import settings
@@ -17,6 +18,7 @@ from src.domain.device import Device
 from src.domain.device_shadow import DeviceShadow
 from src.domain.command import Command, CommandStatus
 from src.infrastructure.db.database import db
+from src.infrastructure.mqtt.mqtt_client import mqtt_client
 from src.infrastructure.mqtt.mqtt_topics import MQTTTopics
 from src.services.device_service import DeviceService
 from src.services.shadow_service import ShadowService
@@ -25,6 +27,20 @@ from src.services.telemetry_service import TelemetryService
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def setup_module(module):
+    """Connect MQTT before tests run — send_command publishes over it."""
+    mqtt_client.connect()
+    for _ in range(50):
+        if mqtt_client.is_connected:
+            return
+        time.sleep(0.1)
+    raise RuntimeError("MQTT did not connect in time for integration tests")
+
+
+def teardown_module(module):
+    mqtt_client.disconnect()
 
 
 # ============================================================================

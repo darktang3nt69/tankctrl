@@ -15,6 +15,7 @@ from src.infrastructure.events.event_publisher import event_publisher
 from src.domain.event import shadow_drifted_event, shadow_synchronized_event, Event
 from src.services.command_service import CommandService
 from src.repository.device_repository import DeviceShadowRepository
+from src.services._errors import log_on_error
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -166,7 +167,7 @@ class ShadowService:
         """
         logger.debug("handling_reported_state", device_id=device_id, reported_state=reported_state)
 
-        try:
+        with log_on_error(logger, "handle_reported_state_failed", device_id=device_id):
             # Get old state before updating
             old_shadow = self.shadow_repo.get_by_device_id(device_id)
             old_reported = old_shadow.reported if old_shadow else {}
@@ -245,9 +246,6 @@ class ShadowService:
                     )
                     
             return shadow
-        except Exception as e:
-            logger.error("handle_reported_state_failed", device_id=device_id, error=str(e))
-            raise
 
     def set_desired_state(self, device_id: str, desired_state: dict) -> Optional[DeviceShadow]:
         """
@@ -262,7 +260,7 @@ class ShadowService:
         """
         logger.info("setting_desired_state", device_id=device_id)
 
-        try:
+        with log_on_error(logger, "set_desired_state_failed", device_id=device_id):
             shadow = self.shadow_repo.get_by_device_id(device_id)
             if not shadow:
                 logger.warning("shadow_not_found", device_id=device_id)
@@ -278,9 +276,6 @@ class ShadowService:
             )
 
             return updated
-        except Exception as e:
-            logger.error("set_desired_state_failed", device_id=device_id, error=str(e))
-            raise
 
     def close(self) -> None:
         """Close the session."""

@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
+from src.repository._errors import log_on_error
 from src.domain.relay_config import RelayConfig
 from src.infrastructure.db.models import RelayConfigModel
 from src.utils.logger import get_logger
@@ -103,6 +104,20 @@ class RelayConfigRepository:
             )
             raise
 
+    def _find_gpio_conflict(
+        self,
+        device_id: str,
+        gpio_pin: int,
+        exclude_relay_name: Optional[str] = None,
+    ) -> Optional[RelayConfigModel]:
+        query = self.session.query(RelayConfigModel).filter(
+            RelayConfigModel.device_id == device_id,
+            RelayConfigModel.gpio_pin == gpio_pin,
+        )
+        if exclude_relay_name is not None:
+            query = query.filter(RelayConfigModel.relay_name != exclude_relay_name)
+        return query.first()
+
     def create_relay(self, relay_config: RelayConfig) -> RelayConfig:
         """
         Create a new relay configuration.
@@ -134,10 +149,9 @@ class RelayConfigRepository:
                 )
 
             # Check for GPIO pin conflict on same device
-            gpio_conflict = self.session.query(RelayConfigModel).filter(
-                RelayConfigModel.device_id == relay_config.device_id,
-                RelayConfigModel.gpio_pin == relay_config.gpio_pin
-            ).first()
+            gpio_conflict = self._find_gpio_conflict(
+                relay_config.device_id, relay_config.gpio_pin
+            )
 
             if gpio_conflict:
                 logger.warning(
@@ -217,11 +231,11 @@ class RelayConfigRepository:
 
             # Check for GPIO pin conflict if GPIO pin is changing
             if db_relay.gpio_pin != relay_config.gpio_pin:
-                gpio_conflict = self.session.query(RelayConfigModel).filter(
-                    RelayConfigModel.device_id == relay_config.device_id,
-                    RelayConfigModel.gpio_pin == relay_config.gpio_pin,
-                    RelayConfigModel.relay_name != relay_config.relay_name
-                ).first()
+                gpio_conflict = self._find_gpio_conflict(
+                    relay_config.device_id,
+                    relay_config.gpio_pin,
+                    exclude_relay_name=relay_config.relay_name,
+                )
 
                 if gpio_conflict:
                     logger.warning(
@@ -279,7 +293,7 @@ class RelayConfigRepository:
         Returns:
             True if deleted, False if not found
         """
-        try:
+        with log_on_error(self.session, logger, "relay_deletion_failed", device_id=device_id, relay_name=relay_name):
             deleted = self.session.query(RelayConfigModel).filter(
                 RelayConfigModel.device_id == device_id,
                 RelayConfigModel.relay_name == relay_name
@@ -301,16 +315,6 @@ class RelayConfigRepository:
                 )
 
             return deleted > 0
-
-        except Exception as e:
-            self.session.rollback()
-            logger.error(
-                "relay_deletion_failed",
-                device_id=device_id,
-                relay_name=relay_name,
-                error=str(e)
-            )
-            raise
 
     def validate_relay_config(self, relay_config: RelayConfig) -> bool:
         """

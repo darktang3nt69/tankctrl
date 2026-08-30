@@ -11,12 +11,13 @@ POST   /devices/{device_id}/relays/push-config  → Push config to device via MQ
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
+from src.api.routes._errors import raise_500
 from src.api.schemas import (
     RelayConfigRequest,
     RelayConfigResponse,
     DeviceRelayConfigResponse,
 )
-from src.infrastructure.db.database import db
+from src.infrastructure.db.database import get_db
 from src.services.relay_config_service import RelayConfigService
 from src.utils.logger import get_logger
 from src.utils.datetime_utils import isoformat_in_app_timezone
@@ -26,13 +27,15 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/devices", tags=["relay-config"])
 
 
-def get_db():
-    """Dependency: Get database session."""
-    session = db.get_session()
-    try:
-        yield session
-    finally:
-        session.close()
+def _serialize_relay(relay_config) -> RelayConfigResponse:
+    return RelayConfigResponse(
+        relay_name=relay_config.relay_name,
+        gpio_pin=relay_config.gpio_pin,
+        active_level=relay_config.active_level,
+        default_state=relay_config.default_state,
+        created_at=isoformat_in_app_timezone(relay_config.created_at),
+        updated_at=isoformat_in_app_timezone(relay_config.updated_at),
+    )
 
 
 @router.get("/{device_id}/relays", response_model=DeviceRelayConfigResponse, status_code=200)
@@ -64,16 +67,10 @@ def list_relays(
             )
 
         # Convert to response format
-        relays_response = {}
-        for relay_name, relay_config in relay_configs.items():
-            relays_response[relay_name] = RelayConfigResponse(
-                relay_name=relay_config.relay_name,
-                gpio_pin=relay_config.gpio_pin,
-                active_level=relay_config.active_level,
-                default_state=relay_config.default_state,
-                created_at=isoformat_in_app_timezone(relay_config.created_at),
-                updated_at=isoformat_in_app_timezone(relay_config.updated_at),
-            )
+        relays_response = {
+            relay_name: _serialize_relay(relay_config)
+            for relay_name, relay_config in relay_configs.items()
+        }
 
         logger.info(
             "list_relays_success",
@@ -90,8 +87,7 @@ def list_relays(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("list_relays_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "list_relays_error", device_id=device_id, error=str(e))
 
 
 @router.post("/{device_id}/relays", response_model=RelayConfigResponse, status_code=201)
@@ -151,25 +147,19 @@ def create_relay(
             gpio_pin=request.gpio_pin
         )
 
-        return RelayConfigResponse(
-            relay_name=relay_config.relay_name,
-            gpio_pin=relay_config.gpio_pin,
-            active_level=relay_config.active_level,
-            default_state=relay_config.default_state,
-            created_at=isoformat_in_app_timezone(relay_config.created_at),
-            updated_at=isoformat_in_app_timezone(relay_config.updated_at),
-        )
+        return _serialize_relay(relay_config)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
+        raise_500(
+            logger,
             "create_relay_error",
+            detail="Failed to create relay",
             device_id=device_id,
             relay_name=request.relay_name,
-            error=str(e)
+            error=str(e),
         )
-        raise HTTPException(status_code=500, detail="Failed to create relay")
 
 
 @router.patch("/{device_id}/relays/{relay_name}", response_model=RelayConfigResponse, status_code=200)
@@ -227,25 +217,19 @@ def update_relay(
             relay_name=relay_name
         )
 
-        return RelayConfigResponse(
-            relay_name=relay_config.relay_name,
-            gpio_pin=relay_config.gpio_pin,
-            active_level=relay_config.active_level,
-            default_state=relay_config.default_state,
-            created_at=isoformat_in_app_timezone(relay_config.created_at),
-            updated_at=isoformat_in_app_timezone(relay_config.updated_at),
-        )
+        return _serialize_relay(relay_config)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
+        raise_500(
+            logger,
             "update_relay_error",
+            detail="Failed to update relay",
             device_id=device_id,
             relay_name=relay_name,
-            error=str(e)
+            error=str(e),
         )
-        raise HTTPException(status_code=500, detail="Failed to update relay")
 
 
 @router.delete("/{device_id}/relays/{relay_name}", status_code=204)
@@ -303,13 +287,14 @@ def delete_relay(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
+        raise_500(
+            logger,
             "delete_relay_error",
+            detail="Failed to delete relay",
             device_id=device_id,
             relay_name=relay_name,
-            error=str(e)
+            error=str(e),
         )
-        raise HTTPException(status_code=500, detail="Failed to delete relay")
 
 
 @router.post("/{device_id}/relays/push-config", status_code=202)
@@ -366,9 +351,10 @@ def push_config(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
+        raise_500(
+            logger,
             "push_config_error",
+            detail="Failed to push relay configuration",
             device_id=device_id,
-            error=str(e)
+            error=str(e),
         )
-        raise HTTPException(status_code=500, detail="Failed to push relay configuration")

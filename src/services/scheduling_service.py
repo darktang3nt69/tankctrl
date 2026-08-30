@@ -195,24 +195,20 @@ class SchedulingService:
             off_time=str(schedule.off_time),
         )
 
+    def _safe_remove_job(self, job_id: str) -> None:
+        """Remove an APScheduler job, ignoring if it doesn't exist."""
+        try:
+            self.scheduler.remove_job(job_id)
+        except:
+            pass
+
     def _unregister_scheduler_jobs(self, device_id: str) -> None:
         """Remove APScheduler jobs for a device."""
         if not self.scheduler:
             return
 
-        on_job_id = f"light_schedule_{device_id}_on"
-        off_job_id = f"light_schedule_{device_id}_off"
-
-        # Try to remove jobs (ignore if they don't exist)
-        try:
-            self.scheduler.remove_job(on_job_id)
-        except:
-            pass
-
-        try:
-            self.scheduler.remove_job(off_job_id)
-        except:
-            pass
+        self._safe_remove_job(f"light_schedule_{device_id}_on")
+        self._safe_remove_job(f"light_schedule_{device_id}_off")
 
         logger.debug("scheduler_jobs_unregistered", device_id=device_id)
 

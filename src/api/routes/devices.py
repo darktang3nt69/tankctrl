@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 from datetime import time as dt_time
 
+from src.api.routes._errors import raise_500
 from src.api.schemas import (
     DeviceDeleteResponse,
     DevicePatchRequest,
@@ -36,7 +37,7 @@ from src.api.schemas import (
     WaterScheduleResponse,
     WarningAckResponse,
 )
-from src.infrastructure.db.database import db
+from src.infrastructure.db.database import get_db
 from src.services.device_service import DeviceService
 from src.services.shadow_service import ShadowService
 from src.services.scheduling_service import SchedulingService
@@ -46,15 +47,6 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/devices", tags=["devices"])
-
-
-def get_db():
-    """Dependency: Get database session."""
-    session = db.get_session()
-    try:
-        yield session
-    finally:
-        session.close()
 
 
 def get_scheduler():
@@ -103,8 +95,7 @@ def list_devices(session: Session = Depends(get_db)):
         }
         
     except Exception as e:
-        logger.error("list_devices_error", error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "list_devices_error", error=str(e))
 
 
 @router.get("/{device_id}", response_model=DeviceResponse)
@@ -144,8 +135,7 @@ def get_device(device_id: str, session: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("get_device_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "get_device_error", device_id=device_id, error=str(e))
 
 
 @router.patch("/{device_id}", response_model=DeviceResponse)
@@ -197,8 +187,7 @@ def patch_device(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("patch_device_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "patch_device_error", device_id=device_id, error=str(e))
 
 
 @router.get("/warnings/acks", response_model=list[WarningAckResponse])
@@ -211,8 +200,7 @@ def get_acknowledged_warnings(session: Session = Depends(get_db)):
             for device_id, warning_code in rows
         ]
     except Exception as e:
-        logger.error("list_warning_acks_error", error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "list_warning_acks_error", error=str(e))
 
 
 @router.post(
@@ -233,13 +221,13 @@ def acknowledge_warning(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(
+        raise_500(
+            logger,
             "acknowledge_warning_error",
             device_id=device_id,
             warning_code=warning_code,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("", response_model=DeviceRegisterResponse, status_code=201)
@@ -273,11 +261,10 @@ def register_device(request: DeviceRegisterRequest, session: Session = Depends(g
         )
         
     except ValueError as e:
-        logger.warning("device_registration_failed", device_id=request.device_id, reason=str(e))
+        logger.warning("device_registration_failed", device_id=request.device_id, error=str(e))
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
-        logger.error("register_device_error", device_id=request.device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "register_device_error", device_id=request.device_id, error=str(e))
 
 
 @router.delete("/{device_id}", response_model=DeviceDeleteResponse)
@@ -312,8 +299,7 @@ def delete_device(device_id: str, session: Session = Depends(get_db)):
         logger.warning("delete_device_not_found", device_id=device_id)
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error("delete_device_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "delete_device_error", device_id=device_id, error=str(e))
 
 
 @router.get("/{device_id}/shadow", response_model=DeviceShadowResponse)
@@ -348,8 +334,7 @@ def get_shadow(device_id: str, session: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("get_shadow_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "get_shadow_error", device_id=device_id, error=str(e))
 
 
 @router.put("/{device_id}/shadow", response_model=DeviceShadowResponse)
@@ -387,8 +372,7 @@ def update_shadow(device_id: str, request: DeviceShadowUpdateRequest, session: S
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("update_shadow_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "update_shadow_error", device_id=device_id, error=str(e))
 
 
 # ============================================================================
@@ -449,8 +433,7 @@ def create_schedule(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("create_schedule_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "create_schedule_error", device_id=device_id, error=str(e))
 
 
 @router.get("/{device_id}/schedule", response_model=ScheduleResponse)
@@ -490,8 +473,7 @@ def get_schedule(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("get_schedule_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "get_schedule_error", device_id=device_id, error=str(e))
 
 
 @router.delete("/{device_id}/schedule", status_code=204)
@@ -526,8 +508,7 @@ def delete_schedule(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("delete_schedule_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "delete_schedule_error", device_id=device_id, error=str(e))
 
 
 @router.get("/{device_id}/detail", response_model=DeviceDetailResponse)
@@ -542,8 +523,7 @@ def get_device_detail(device_id: str, session: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("get_device_detail_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "get_device_detail_error", device_id=device_id, error=str(e))
 
 
 @router.put("/{device_id}/metadata", response_model=DeviceResponse)
@@ -578,8 +558,7 @@ def update_device_metadata(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("update_device_metadata_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "update_device_metadata_error", device_id=device_id, error=str(e))
 
 
 def _serialize_water_schedule(schedule) -> WaterScheduleResponse:
@@ -613,8 +592,7 @@ def get_water_schedules(device_id: str, session: Session = Depends(get_db)):
         schedules = device_service.get_water_schedules(device_id)
         return [_serialize_water_schedule(s) for s in schedules]
     except Exception as e:
-        logger.error("get_water_schedules_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "get_water_schedules_error", device_id=device_id, error=str(e))
 
 
 @router.post("/{device_id}/water-schedules", response_model=WaterScheduleResponse, status_code=201)
@@ -633,8 +611,7 @@ def create_water_schedule(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("create_water_schedule_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "create_water_schedule_error", device_id=device_id, error=str(e))
 
 
 @router.put("/{device_id}/water-schedules/{schedule_id}", response_model=WaterScheduleResponse, status_code=200)
@@ -659,13 +636,13 @@ def update_water_schedule(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
+        raise_500(
+            logger,
             "update_water_schedule_error",
             device_id=device_id,
             schedule_id=schedule_id,
-            error=str(e)
+            error=str(e),
         )
-        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/{device_id}/water-schedules/{schedule_id}", status_code=204)
@@ -683,5 +660,4 @@ def delete_water_schedule(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("delete_water_schedule_error", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise_500(logger, "delete_water_schedule_error", device_id=device_id, error=str(e))

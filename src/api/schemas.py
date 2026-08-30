@@ -327,28 +327,6 @@ class DeviceMetadataUpdateRequest(BaseModel):
         return self
 
 
-class LightScheduleRequest(BaseModel):
-    """Request to create/update light schedule."""
-
-    enabled: bool = Field(True, description="Whether schedule is enabled")
-    start_time: str = Field(
-        ...,
-        pattern=r"^([01]\d|2[0-3]):([0-5]\d)$",
-        description="Start time in HH:MM format (24-hour)"
-    )
-    end_time: str = Field(
-        ...,
-        pattern=r"^([01]\d|2[0-3]):([0-5]\d)$",
-        description="End time in HH:MM format (24-hour)"
-    )
-
-    @model_validator(mode='after')
-    def validate_times(self):
-        if self.start_time >= self.end_time:
-            raise ValueError("start_time must be before end_time")
-        return self
-
-
 class LightScheduleResponse(BaseModel):
     """Response with light schedule details."""
 

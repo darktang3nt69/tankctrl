@@ -10,6 +10,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from src.repository._errors import log_on_error
 from src.domain.device import Device
 from src.domain.device_shadow import DeviceShadow
 from src.infrastructure.db.models import (
@@ -30,6 +31,26 @@ class DeviceRepository:
         """Initialize repository with database session."""
         self.session = session
 
+    def _get_db_device(self, device_id: str) -> Optional[DeviceModel]:
+        return self.session.query(DeviceModel).filter(
+            DeviceModel.device_id == device_id
+        ).first()
+
+    def _to_domain(self, db_device: DeviceModel) -> Device:
+        return Device(
+            device_id=db_device.device_id,
+            device_secret=db_device.device_secret,
+            status=db_device.status,
+            firmware_version=db_device.firmware_version,
+            created_at=db_device.created_at,
+            last_seen=db_device.last_seen,
+            uptime_ms=db_device.uptime_ms,
+            rssi=db_device.rssi,
+            wifi_status=db_device.wifi_status,
+            temp_threshold_low=db_device.temp_threshold_low,
+            temp_threshold_high=db_device.temp_threshold_high,
+        )
+
     def create(self, device: Device) -> Device:
         """
         Create a new device in database.
@@ -43,7 +64,7 @@ class DeviceRepository:
         Raises:
             Exception: If device already exists
         """
-        try:
+        with log_on_error(self.session, logger, "device_creation_failed", device_id=device.device_id):
             db_device = DeviceModel(
                 device_id=device.device_id,
                 device_secret=device.device_secret,
@@ -61,10 +82,6 @@ class DeviceRepository:
             self.session.commit()
             logger.info("device_created", device_id=device.device_id)
             return device
-        except Exception as e:
-            self.session.rollback()
-            logger.error("device_creation_failed", device_id=device.device_id, error=str(e))
-            raise
 
     def get_by_id(self, device_id: str) -> Optional[Device]:
         """
@@ -77,26 +94,12 @@ class DeviceRepository:
             Device or None if not found
         """
         try:
-            db_device = self.session.query(DeviceModel).filter(
-                DeviceModel.device_id == device_id
-            ).first()
+            db_device = self._get_db_device(device_id)
 
             if not db_device:
                 return None
 
-            return Device(
-                device_id=db_device.device_id,
-                device_secret=db_device.device_secret,
-                status=db_device.status,
-                firmware_version=db_device.firmware_version,
-                created_at=db_device.created_at,
-                last_seen=db_device.last_seen,
-                uptime_ms=db_device.uptime_ms,
-                rssi=db_device.rssi,
-                wifi_status=db_device.wifi_status,
-                temp_threshold_low=db_device.temp_threshold_low,
-                temp_threshold_high=db_device.temp_threshold_high,
-            )
+            return self._to_domain(db_device)
         except Exception as e:
             logger.error("device_get_failed", device_id=device_id, error=str(e))
             raise
@@ -113,21 +116,7 @@ class DeviceRepository:
             db_devices = self.session.query(DeviceModel).all()
 
             for db_device in db_devices:
-                devices.append(
-                    Device(
-                        device_id=db_device.device_id,
-                        device_secret=db_device.device_secret,
-                        status=db_device.status,
-                        firmware_version=db_device.firmware_version,
-                        created_at=db_device.created_at,
-                        last_seen=db_device.last_seen,
-                        uptime_ms=db_device.uptime_ms,
-                        rssi=db_device.rssi,
-                        wifi_status=db_device.wifi_status,
-                        temp_threshold_low=db_device.temp_threshold_low,
-                        temp_threshold_high=db_device.temp_threshold_high,
-                    )
-                )
+                devices.append(self._to_domain(db_device))
 
             return devices
         except Exception as e:
@@ -147,10 +136,8 @@ class DeviceRepository:
         Raises:
             Exception: If device not found
         """
-        try:
-            db_device = self.session.query(DeviceModel).filter(
-                DeviceModel.device_id == device.device_id
-            ).first()
+        with log_on_error(self.session, logger, "device_update_failed", device_id=device.device_id):
+            db_device = self._get_db_device(device.device_id)
 
             if not db_device:
                 raise ValueError(f"Device {device.device_id} not found")
@@ -167,10 +154,6 @@ class DeviceRepository:
             self.session.commit()
             logger.info("device_updated", device_id=device.device_id)
             return device
-        except Exception as e:
-            self.session.rollback()
-            logger.error("device_update_failed", device_id=device.device_id, error=str(e))
-            raise
 
     def update_thresholds(
         self,
@@ -179,9 +162,7 @@ class DeviceRepository:
         temp_threshold_high: float | None,
     ) -> Device:
         """Update threshold settings on an existing device."""
-        db_device = self.session.query(DeviceModel).filter(
-            DeviceModel.device_id == device_id
-        ).first()
+        db_device = self._get_db_device(device_id)
 
         if not db_device:
             raise ValueError(f"Device {device_id} not found")
@@ -190,19 +171,7 @@ class DeviceRepository:
         db_device.temp_threshold_high = temp_threshold_high
         self.session.commit()
 
-        return Device(
-            device_id=db_device.device_id,
-            device_secret=db_device.device_secret,
-            status=db_device.status,
-            firmware_version=db_device.firmware_version,
-            created_at=db_device.created_at,
-            last_seen=db_device.last_seen,
-            uptime_ms=db_device.uptime_ms,
-            rssi=db_device.rssi,
-            wifi_status=db_device.wifi_status,
-            temp_threshold_low=db_device.temp_threshold_low,
-            temp_threshold_high=db_device.temp_threshold_high,
-        )
+        return self._to_domain(db_device)
 
     def update_last_seen(self, device_id: str) -> None:
         """
@@ -212,9 +181,7 @@ class DeviceRepository:
             device_id: Device ID
         """
         try:
-            db_device = self.session.query(DeviceModel).filter(
-                DeviceModel.device_id == device_id
-            ).first()
+            db_device = self._get_db_device(device_id)
 
             if db_device:
                 db_device.last_seen = datetime.utcnow()
@@ -233,9 +200,7 @@ class DeviceRepository:
             status: New status (online/offline)
         """
         try:
-            db_device = self.session.query(DeviceModel).filter(
-                DeviceModel.device_id == device_id
-            ).first()
+            db_device = self._get_db_device(device_id)
 
             if db_device:
                 db_device.status = status
@@ -252,17 +217,13 @@ class DeviceRepository:
         Args:
             device_id: Device ID
         """
-        try:
+        with log_on_error(self.session, logger, "device_deletion_failed", device_id=device_id):
             deleted = self.session.query(DeviceModel).filter(
                 DeviceModel.device_id == device_id
             ).delete()
             self.session.commit()
             logger.info("device_deleted", device_id=device_id, deleted=deleted > 0)
             return deleted > 0
-        except Exception as e:
-            self.session.rollback()
-            logger.error("device_deletion_failed", device_id=device_id, error=str(e))
-            raise
 
     def delete_events(self, device_id: str) -> int:
         """
@@ -274,17 +235,13 @@ class DeviceRepository:
         Returns:
             Number of deleted event rows
         """
-        try:
+        with log_on_error(self.session, logger, "device_events_delete_failed", device_id=device_id):
             deleted = self.session.query(EventRecord).filter(
                 EventRecord.device_id == device_id
             ).delete()
             self.session.commit()
             logger.info("device_events_deleted", device_id=device_id, count=deleted)
             return deleted
-        except Exception as e:
-            self.session.rollback()
-            logger.error("device_events_delete_failed", device_id=device_id, error=str(e))
-            raise
 
 
 class DeviceShadowRepository:
@@ -293,6 +250,21 @@ class DeviceShadowRepository:
     def __init__(self, session: Session):
         """Initialize repository with database session."""
         self.session = session
+
+    def _get_db_shadow(self, device_id: str) -> Optional[DeviceShadowModel]:
+        return self.session.query(DeviceShadowModel).filter(
+            DeviceShadowModel.device_id == device_id
+        ).first()
+
+    def _to_domain(self, db_shadow: DeviceShadowModel) -> DeviceShadow:
+        return DeviceShadow(
+            device_id=db_shadow.device_id,
+            desired=json.loads(db_shadow.desired),
+            reported=json.loads(db_shadow.reported),
+            version=db_shadow.version,
+            created_at=db_shadow.created_at,
+            updated_at=db_shadow.updated_at,
+        )
 
     def create(self, shadow: DeviceShadow) -> DeviceShadow:
         """
@@ -304,7 +276,7 @@ class DeviceShadowRepository:
         Returns:
             Created shadow
         """
-        try:
+        with log_on_error(self.session, logger, "shadow_creation_failed", device_id=shadow.device_id):
             db_shadow = DeviceShadowModel(
                 device_id=shadow.device_id,
                 desired=json.dumps(shadow.desired),
@@ -317,10 +289,6 @@ class DeviceShadowRepository:
             self.session.commit()
             logger.info("shadow_created", device_id=shadow.device_id)
             return shadow
-        except Exception as e:
-            self.session.rollback()
-            logger.error("shadow_creation_failed", device_id=shadow.device_id, error=str(e))
-            raise
 
     def get_by_device_id(self, device_id: str) -> Optional[DeviceShadow]:
         """
@@ -333,21 +301,12 @@ class DeviceShadowRepository:
             DeviceShadow or None if not found
         """
         try:
-            db_shadow = self.session.query(DeviceShadowModel).filter(
-                DeviceShadowModel.device_id == device_id
-            ).first()
+            db_shadow = self._get_db_shadow(device_id)
 
             if not db_shadow:
                 return None
 
-            return DeviceShadow(
-                device_id=db_shadow.device_id,
-                desired=json.loads(db_shadow.desired),
-                reported=json.loads(db_shadow.reported),
-                version=db_shadow.version,
-                created_at=db_shadow.created_at,
-                updated_at=db_shadow.updated_at,
-            )
+            return self._to_domain(db_shadow)
         except Exception as e:
             logger.error("shadow_get_failed", device_id=device_id, error=str(e))
             raise
@@ -365,10 +324,8 @@ class DeviceShadowRepository:
         Raises:
             Exception: If shadow not found
         """
-        try:
-            db_shadow = self.session.query(DeviceShadowModel).filter(
-                DeviceShadowModel.device_id == shadow.device_id
-            ).first()
+        with log_on_error(self.session, logger, "shadow_update_failed", device_id=shadow.device_id):
+            db_shadow = self._get_db_shadow(shadow.device_id)
 
             if not db_shadow:
                 raise ValueError(f"Shadow for device {shadow.device_id} not found")
@@ -381,10 +338,6 @@ class DeviceShadowRepository:
             self.session.commit()
             logger.debug("shadow_updated", device_id=shadow.device_id, version=shadow.version)
             return shadow
-        except Exception as e:
-            self.session.rollback()
-            logger.error("shadow_update_failed", device_id=shadow.device_id, error=str(e))
-            raise
 
     def update_reported(self, device_id: str, reported_state: dict) -> Optional[DeviceShadow]:
         """
@@ -397,10 +350,8 @@ class DeviceShadowRepository:
         Returns:
             Updated shadow or None if not found
         """
-        try:
-            db_shadow = self.session.query(DeviceShadowModel).filter(
-                DeviceShadowModel.device_id == device_id
-            ).first()
+        with log_on_error(self.session, logger, "shadow_reported_update_failed", device_id=device_id):
+            db_shadow = self._get_db_shadow(device_id)
 
             if not db_shadow:
                 return None
@@ -415,18 +366,7 @@ class DeviceShadowRepository:
             self.session.commit()
             logger.debug("shadow_reported_updated", device_id=device_id)
 
-            return DeviceShadow(
-                device_id=db_shadow.device_id,
-                desired=json.loads(db_shadow.desired),
-                reported=merged,
-                version=db_shadow.version,
-                created_at=db_shadow.created_at,
-                updated_at=db_shadow.updated_at,
-            )
-        except Exception as e:
-            self.session.rollback()
-            logger.error("shadow_reported_update_failed", device_id=device_id, error=str(e))
-            raise
+            return self._to_domain(db_shadow)
 
     def delete(self, device_id: str) -> bool:
         """
@@ -438,17 +378,13 @@ class DeviceShadowRepository:
         Returns:
             True if deleted, False otherwise
         """
-        try:
+        with log_on_error(self.session, logger, "shadow_delete_failed", device_id=device_id):
             deleted = self.session.query(DeviceShadowModel).filter(
                 DeviceShadowModel.device_id == device_id
             ).delete()
             self.session.commit()
             logger.info("shadow_deleted", device_id=device_id, deleted=deleted > 0)
             return deleted > 0
-        except Exception as e:
-            self.session.rollback()
-            logger.error("shadow_delete_failed", device_id=device_id, error=str(e))
-            raise
 
 
 class WarningAcknowledgementRepository:

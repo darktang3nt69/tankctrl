@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Query, Path, HTTPException, status
 from pydantic import BaseModel, Field
 
+from src.api.routes._errors import raise_500
 from src.domain.event import Event
 from src.infrastructure.events.event_store import EventStore
 from src.utils.logger import get_logger
@@ -74,8 +75,7 @@ async def get_events(
         ]
     
     except Exception as e:
-        logger.error("events_get_failed", error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to retrieve events")
+        raise_500(logger, "events_get_failed", detail="Failed to retrieve events", error=str(e))
 
 
 @router.get("/devices/{device_id}", response_model=list[EventResponse])
@@ -120,8 +120,13 @@ async def get_device_events(
         logger.warning("invalid_device_id", device_id=device_id)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("device_events_get_failed", device_id=device_id, error=str(e))
-        raise HTTPException(status_code=500, detail="Failed to retrieve device events")
+        raise_500(
+            logger,
+            "device_events_get_failed",
+            detail="Failed to retrieve device events",
+            device_id=device_id,
+            error=str(e),
+        )
 
 
 @router.get("/types", response_model=list[str])
@@ -154,13 +159,14 @@ async def dismiss_attention_issue(request: DismissalRequest) -> None:
             )
         )
     except Exception as e:
-        logger.error(
+        raise_500(
+            logger,
             "attention_dismiss_failed",
+            detail="Failed to persist dismissal",
             device_id=request.device_id,
             issue_key=request.issue_key,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail="Failed to persist dismissal")
     finally:
         if store is not None:
             store.close()

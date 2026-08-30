@@ -116,6 +116,9 @@ class WaterScheduleReminderService:
         self._sent_cache[cache_key] = now
         return True
 
+    def _event_dt(self, d: date, t, tz) -> datetime:
+        return datetime(d.year, d.month, d.day, t.hour, t.minute, tzinfo=tz)
+
     def _compute_reminder_target(
         self,
         schedule: WaterScheduleModel,
@@ -133,12 +136,7 @@ class WaterScheduleReminderService:
                 event_date = date.fromisoformat(schedule.schedule_date)
             except ValueError:
                 return None
-            event_dt = datetime(
-                event_date.year, event_date.month, event_date.day,
-                t.hour, t.minute,
-                tzinfo=tz,
-            )
-            return event_dt - offset
+            return self._event_dt(event_date, t, tz) - offset
 
         elif schedule.schedule_type == "weekly":
             if not schedule.days_of_week:
@@ -167,12 +165,7 @@ class WaterScheduleReminderService:
                 min_days_ahead = min(min_days_ahead, days_ahead)
             
             event_date = now.date() + timedelta(days=min_days_ahead)
-            event_dt = datetime(
-                event_date.year, event_date.month, event_date.day,
-                t.hour, t.minute,
-                tzinfo=tz,
-            )
-            return event_dt - offset
+            return self._event_dt(event_date, t, tz) - offset
 
         return None
 
