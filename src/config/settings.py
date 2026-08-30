@@ -23,6 +23,15 @@ class MQTTSettings:
     qos: int = 1
     keepalive: int = 60
 
+    # Mosquitto password/ACL files, as mounted into this container (or the
+    # host, for a non-Docker run) — see docker-compose.yml. Used to issue
+    # per-device MQTT credentials on registration.
+    passwd_file: str = os.getenv("MQTT_PASSWD_FILE", "/mosquitto/config/auth/passwd")
+    acl_file: str = os.getenv("MQTT_ACL_FILE", "/mosquitto/config/auth/acl")
+    # Container name to signal (SIGHUP) after writing new credentials, so
+    # the broker reloads passwd_file/acl_file without a restart.
+    broker_container_name: str = os.getenv("MQTT_BROKER_CONTAINER_NAME", "tankctl-mosquitto")
+
 
 @dataclass
 class DatabaseSettings:

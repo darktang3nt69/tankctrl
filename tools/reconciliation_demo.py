@@ -39,6 +39,7 @@ class ReconciliationDemo:
         self.broker_host = broker_host
         self.broker_port = broker_port
         self.device_ids = ["tank1", "tank2", "tank3"]
+        self.credentials: Dict[str, str] = {}
         self.simulator = None
 
     def log(self, msg: str, level: str = "INFO"):
@@ -56,13 +57,27 @@ class ReconciliationDemo:
             try:
                 response = requests.post(
                     f"{self.api_url}/devices",
-                    json={"device_id": device_id, "device_secret": f"secret_{device_id}"},
+                    json={"device_id": device_id},
                     timeout=5,
                 )
                 if response.status_code in [200, 201]:
+                    self.credentials[device_id] = response.json()["mqtt_password"]
                     self.log(f"✓ Registered: {device_id}")
                 elif response.status_code == 409:
-                    self.log(f"✓ Already exists: {device_id}")
+                    # Already registered by an earlier run of this demo — its
+                    # MQTT password isn't retrievable anymore, so re-provision
+                    # a fresh one rather than leaving it un-connectable.
+                    requests.delete(f"{self.api_url}/devices/{device_id}", timeout=5)
+                    response = requests.post(
+                        f"{self.api_url}/devices",
+                        json={"device_id": device_id},
+                        timeout=5,
+                    )
+                    if response.status_code == 201:
+                        self.credentials[device_id] = response.json()["mqtt_password"]
+                        self.log(f"✓ Re-registered (fresh credentials): {device_id}")
+                    else:
+                        self.log(f"✗ Failed to re-register: {device_id}", "ERROR")
                 else:
                     self.log(f"✗ Failed to register: {device_id}", "ERROR")
             except Exception as e:
@@ -164,13 +179,15 @@ class ReconciliationDemo:
         self.log("STEP 4: Start Devices (Going ONLINE)")
         self.log("=" * 70)
 
-        # Create simulator with 3 devices
+        # Create simulator with 3 devices, reusing the credentials obtained
+        # when we registered them in step 1 (re-registering here would wipe
+        # the desired state we just set)
         self.simulator = DeviceSimulator(
             device_count=3,
             broker_host=self.broker_host,
             broker_port=self.broker_port,
-            mqtt_username="tankctl",
-            mqtt_password="password",
+            api_url=self.api_url,
+            credentials=self.credentials,
         )
 
         self.log("Starting device simulator...")

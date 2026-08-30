@@ -261,13 +261,14 @@ class TankCtlIntegrationTest:
                 result.failure("Device simulator not available")
                 return result
 
-            # Create simulator with 3 devices
+            # Create simulator with 3 devices — it self-registers each via
+            # the API to obtain per-device MQTT credentials (allow_anonymous
+            # is false, so a shared username/password no longer works)
             self.simulator = DeviceSimulator(
                 device_count=3,
                 broker_host="localhost",
                 broker_port=1883,
-                mqtt_username="tankctl",
-                mqtt_password="password",
+                api_url=self.api_url,
             )
 
             # Start simulator in background task

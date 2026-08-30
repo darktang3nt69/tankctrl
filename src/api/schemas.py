@@ -41,7 +41,15 @@ class DeviceRegisterResponse(BaseModel):
         ...,
         description="Auto-generated authentication secret - must be provisioned into device"
     )
-    status: Literal["offline", "online"]
+    mqtt_password: str = Field(
+        ...,
+        description=(
+            "Auto-generated MQTT broker password (username = device_id). "
+            "Returned once here only - not retrievable afterward, provision it "
+            "into the device now."
+        ),
+    )
+    status: Literal["offline", "online", "time_unknown"]
     created_at: Optional[str] = None
 
 
@@ -53,7 +61,7 @@ class DeviceResponse(BaseModel):
     location: Optional[str] = None
     icon_type: str = "fish_bowl"
     description: Optional[str] = None
-    status: Literal["online", "offline"]
+    status: Literal["online", "offline", "time_unknown"]
     firmware_version: Optional[str] = None
     created_at: Optional[str] = None
     last_seen: Optional[str] = None
@@ -421,7 +429,7 @@ class DeviceDetailResponse(BaseModel):
     location: Optional[str] = None
     icon_type: str
     description: Optional[str] = None
-    status: Literal["online", "offline"]
+    status: Literal["online", "offline", "time_unknown"]
     firmware_version: Optional[str] = None
     created_at: Optional[str] = None
     last_seen: Optional[str] = None
@@ -469,6 +477,23 @@ class RelayConfigRequest(BaseModel):
         description="Safe default state on device boot"
     )
 
+    fail_safe_default: Literal["on", "off"] = Field(
+        ...,
+        description="State to force this relay to when the device can't trust its network/time (fail-safe contract). No default — must be set explicitly for every relay."
+    )
+
+    cutoff_ceiling_seconds: int | None = Field(
+        ...,
+        description="Max continuous-on seconds before the device's hard-cutoff watchdog forces the relay off. Required key; null means no ceiling (fails open, e.g. filter/pump)."
+    )
+
+    @field_validator("cutoff_ceiling_seconds")
+    @classmethod
+    def validate_cutoff_ceiling_seconds(cls, v):
+        if v is not None and v <= 0:
+            raise ValueError("cutoff_ceiling_seconds must be a positive integer or null")
+        return v
+
 
 class RelayConfigResponse(BaseModel):
     """Response with relay configuration details."""
@@ -491,6 +516,16 @@ class RelayConfigResponse(BaseModel):
     default_state: Literal["on", "off"] = Field(
         ...,
         description="Safe default state on device boot"
+    )
+
+    fail_safe_default: Literal["on", "off"] = Field(
+        ...,
+        description="State to force this relay to when the device can't trust its network/time"
+    )
+
+    cutoff_ceiling_seconds: Optional[int] = Field(
+        default=None,
+        description="Max continuous-on seconds before hard cutoff; null means no ceiling"
     )
 
     created_at: Optional[str] = None

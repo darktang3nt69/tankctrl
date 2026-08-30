@@ -170,6 +170,8 @@ class RelayConfigRepository:
                 gpio_pin=relay_config.gpio_pin,
                 active_level=relay_config.active_level,
                 default_state=relay_config.default_state,
+                fail_safe_default=relay_config.fail_safe_default,
+                cutoff_ceiling_seconds=relay_config.cutoff_ceiling_seconds,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             )
@@ -251,6 +253,8 @@ class RelayConfigRepository:
             db_relay.gpio_pin = relay_config.gpio_pin
             db_relay.active_level = relay_config.active_level
             db_relay.default_state = relay_config.default_state
+            db_relay.fail_safe_default = relay_config.fail_safe_default
+            db_relay.cutoff_ceiling_seconds = relay_config.cutoff_ceiling_seconds
             db_relay.updated_at = datetime.utcnow()
 
             self.session.commit()
@@ -375,8 +379,10 @@ class RelayConfigRepository:
         return RelayConfig(
             relay_name=db_model.relay_name,
             gpio_pin=db_model.gpio_pin,
+            fail_safe_default=db_model.fail_safe_default,
             active_level=db_model.active_level,
             default_state=db_model.default_state,
+            cutoff_ceiling_seconds=db_model.cutoff_ceiling_seconds,
             device_id=db_model.device_id,
             created_at=db_model.created_at,
             updated_at=db_model.updated_at,

@@ -59,20 +59,31 @@ class RelayConfigService:
                 )
                 raise ValueError(f"Device {device_id} not found")
 
-            # Define default relays
+            # Define default relays.
+            # fail_safe_default: state forced when the device can't trust its
+            # network/time. Light fails closed (off) since an unattended light
+            # left on isn't safety-critical; pump fails open (on) since fish
+            # depend on continuous filtration. cutoff_ceiling_seconds is left
+            # unset (None) for both — the light's ceiling is derived once a
+            # schedule exists (see SchedulingService), and the pump has no
+            # ceiling by design (fails open, no forced cutoff).
             default_relays = [
                 RelayConfig(
                     relay_name="light",
                     gpio_pin=4,  # D4 on ESP32
+                    fail_safe_default="off",
                     active_level="LOW",
                     default_state="off",
+                    cutoff_ceiling_seconds=None,
                     device_id=device_id,
                 ),
                 RelayConfig(
                     relay_name="pump",
                     gpio_pin=12,  # D12 on ESP32
+                    fail_safe_default="on",
                     active_level="LOW",
                     default_state="off",
+                    cutoff_ceiling_seconds=None,
                     device_id=device_id,
                 ),
             ]
@@ -232,6 +243,17 @@ class RelayConfigService:
             if relay_config.default_state not in ("on", "off"):
                 return False, f"default_state must be 'on' or 'off', got {relay_config.default_state}"
 
+            # Check fail_safe_default
+            if relay_config.fail_safe_default not in ("on", "off"):
+                return False, f"fail_safe_default must be 'on' or 'off', got {relay_config.fail_safe_default}"
+
+            # Check cutoff_ceiling_seconds
+            if relay_config.cutoff_ceiling_seconds is not None and relay_config.cutoff_ceiling_seconds <= 0:
+                return False, (
+                    f"cutoff_ceiling_seconds must be a positive integer or null, "
+                    f"got {relay_config.cutoff_ceiling_seconds}"
+                )
+
             # Check GPIO conflict
             if not self.relay_repo.validate_relay_config(relay_config):
                 return False, f"GPIO pin {relay_config.gpio_pin} is already in use on device {relay_config.device_id}"
@@ -258,6 +280,8 @@ class RelayConfigService:
         device_id: str,
         relay_name: str,
         gpio_pin: int,
+        fail_safe_default: str,
+        cutoff_ceiling_seconds: Optional[int],
         active_level: str = "LOW",
         default_state: str = "off",
     ) -> RelayConfig:
@@ -268,6 +292,11 @@ class RelayConfigService:
             device_id: Device ID
             relay_name: Logical relay name (e.g., 'light', 'pump')
             gpio_pin: GPIO pin number (0-39 for ESP32)
+            fail_safe_default: 'on' or 'off' — state to force when the device
+                can't trust its network/time. Required, no defaulting.
+            cutoff_ceiling_seconds: Max continuous-on seconds before hard
+                cutoff, or None for no ceiling. Required key, passed through
+                as given — no defaulting.
             active_level: 'LOW' or 'HIGH' (default 'LOW')
             default_state: 'on' or 'off' (default 'off')
 
@@ -291,8 +320,10 @@ class RelayConfigService:
             relay_config = RelayConfig(
                 relay_name=relay_name,
                 gpio_pin=gpio_pin,
+                fail_safe_default=fail_safe_default,
                 active_level=active_level,
                 default_state=default_state,
+                cutoff_ceiling_seconds=cutoff_ceiling_seconds,
                 device_id=device_id,
             )
 
@@ -322,9 +353,11 @@ class RelayConfigService:
         self,
         device_id: str,
         relay_name: str,
+        cutoff_ceiling_seconds: Optional[int],
         gpio_pin: Optional[int] = None,
         active_level: Optional[str] = None,
         default_state: Optional[str] = None,
+        fail_safe_default: Optional[str] = None,
     ) -> RelayConfig:
         """
         Update an existing relay configuration.
@@ -332,9 +365,15 @@ class RelayConfigService:
         Args:
             device_id: Device ID
             relay_name: Relay name to update
-            gpio_pin: New GPIO pin (optional)
-            active_level: New active level (optional)
-            default_state: New default state (optional)
+            cutoff_ceiling_seconds: New ceiling in seconds, or None for no
+                ceiling. Required key (no default) — unlike the other fields
+                here, None is a legitimate target value ("no ceiling"), not a
+                "leave unchanged" sentinel, so callers must always pass it
+                explicitly and it is applied as given, never defaulted.
+            gpio_pin: New GPIO pin (optional; omit to keep existing)
+            active_level: New active level (optional; omit to keep existing)
+            default_state: New default state (optional; omit to keep existing)
+            fail_safe_default: New fail-safe default (optional; omit to keep existing)
 
         Returns:
             Updated RelayConfig
@@ -359,8 +398,10 @@ class RelayConfigService:
             updated_config = RelayConfig(
                 relay_name=relay_name,
                 gpio_pin=gpio_pin if gpio_pin is not None else existing.gpio_pin,
+                fail_safe_default=fail_safe_default if fail_safe_default is not None else existing.fail_safe_default,
                 active_level=active_level if active_level is not None else existing.active_level,
                 default_state=default_state if default_state is not None else existing.default_state,
+                cutoff_ceiling_seconds=cutoff_ceiling_seconds,
                 device_id=device_id,
             )
 

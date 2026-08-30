@@ -7,7 +7,19 @@ These models map to PostgreSQL and TimescaleDB tables.
 from datetime import datetime
 import json
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Text, Time, Boolean, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Time,
+    Boolean,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -194,6 +206,11 @@ class RelayConfigModel(Base):
     __table_args__ = (
         UniqueConstraint("device_id", "relay_name", name="uq_relay_name_per_device"),
         UniqueConstraint("device_id", "gpio_pin", name="uq_gpio_pin_per_device"),
+        CheckConstraint("fail_safe_default IN ('on', 'off')", name="ck_relay_fail_safe_default"),
+        CheckConstraint(
+            "cutoff_ceiling_seconds IS NULL OR cutoff_ceiling_seconds > 0",
+            name="ck_relay_cutoff_ceiling_seconds",
+        ),
     )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -202,9 +219,58 @@ class RelayConfigModel(Base):
     gpio_pin = Column(Integer, nullable=False)  # ESP32 GPIO (0-39)
     active_level = Column(String(10), nullable=False, default="LOW")  # "LOW" or "HIGH"
     default_state = Column(String(10), nullable=False, default="off")  # "on" or "off"
+    # Fail-safe contract: state the device forces this relay to when it can't
+    # trust its network/time (e.g. `time_unknown`). No column default — a
+    # relay must never ship on an implicit global default.
+    fail_safe_default = Column(String(10), nullable=False)
+    # Max continuous-on seconds before the device's independent hard-cutoff
+    # watchdog forces the relay off. NULL = no ceiling (fails open).
+    cutoff_ceiling_seconds = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False, onupdate=datetime.utcnow)
 
     def __repr__(self):
         return f"<RelayConfigModel(device_id={self.device_id}, relay_name={self.relay_name}, gpio_pin={self.gpio_pin})>"
+
+
+class FirmwareReleaseModel(Base):
+    """Firmware release table model — uploaded firmware binaries available for deployment."""
+
+    __tablename__ = "firmware_releases"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(String(50), nullable=False, unique=True, index=True)
+    filename = Column(String(255), nullable=False)
+    file_size = Column(Integer, nullable=False)
+    checksum = Column(String(64), nullable=True)
+    platform = Column(String(50), nullable=False, default="esp32", index=True)
+    release_notes = Column(Text, nullable=True)
+    released_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+
+    def __repr__(self):
+        return f"<FirmwareReleaseModel(version={self.version}, platform={self.platform})>"
+
+
+class FirmwareDeploymentModel(Base):
+    """Firmware deployment table model — per-device deployment history for a release."""
+
+    __tablename__ = "firmware_deployments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    release_id = Column(Integer, ForeignKey("firmware_releases.id"), nullable=False, index=True)
+    device_id = Column(
+        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status = Column(String(50), default="pending", index=True)  # pending, updating, success, failed
+    error_message = Column(Text, nullable=True)
+    command_version = Column(Integer, nullable=True)
+    attempted_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=True)
+
+    def __repr__(self):
+        return f"<FirmwareDeploymentModel(device_id={self.device_id}, release_id={self.release_id}, status={self.status})>"
 

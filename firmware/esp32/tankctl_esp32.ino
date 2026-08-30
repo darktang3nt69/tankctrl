@@ -32,7 +32,59 @@
  * 
  * - Publish: tankctl/{device_id}/heartbeat
  *   Heartbeat: {"status": "online", "uptime_ms": 123456, "free_heap": 250000}
- * 
+ *   Status is "online" normally, or "time_unknown" when the device does not
+ *   trust its own clock (see Fail-Safe Stack below) - the light schedule is
+ *   not applied while in that state.
+ *
+ * ===== FAIL-SAFE RELAY STACK (Layers 1-4) =====
+ * The device must never depend on network/backend availability to do the
+ * safe thing with a relay. Three independent layers, on top of MQTT
+ * command handling:
+ *
+ * Layer 1 - RTC (DS3231 via RTClib, I2C SDA=21/SCL=22, see PINOUT.md):
+ *   Read once at boot. rtc.lostPower() true (dead battery / first boot,
+ *   or the chip isn't even present yet) means the device cannot trust any
+ *   time it has -> feeds Layer 4 (time_unknown) below. NOT YET VERIFIED ON
+ *   HARDWARE - DS3231 module ordered but not arrived; logic reviewed by
+ *   hand, see initRtc()/syncRtcFromNtpIfAvailable() comments for the
+ *   specific things that need confirming once it's in hand.
+ *
+ * Layer 2 - local schedule engine (runSchedule(), ticks every ~1s from
+ *   loop()): reads the DS3231 directly (never system/NTP time), compares
+ *   against the on/off schedule cached in NVS Preferences, and drives the
+ *   "light" relay's GPIO directly. Works with zero live MQTT/WiFi once a
+ *   schedule is cached. No cached schedule yet -> light stays at its
+ *   fail_safe_default (see relay config, below) instead of an arbitrary
+ *   boot GPIO level.
+ *
+ * Layer 3 - independent hard-cutoff watchdog (checkCutoffWatchdog(), own
+ *   ~1s timer, own onSinceMs counters): a SEPARATE code path from Layer 2,
+ *   sharing no logic with the scheduler, so a scheduler bug cannot disable
+ *   it. For any relay with a positive cutoff_ceiling_seconds, tracks how
+ *   long it has been continuously on (however it got turned on - schedule,
+ *   command, or boot default) and forces it off directly at the GPIO level
+ *   once the ceiling is passed, regardless of what the scheduler or an
+ *   inbound command currently says.
+ *
+ * Layer 4 - time_unknown: triggered by Layer 1's lostPower (or no RTC
+ *   found at all) OR the cached NVS schedule failing its checksum. On
+ *   trigger, every relay is forced to its fail_safe_default immediately
+ *   (applyFailSafeDefaults(), not gated on Layer 3's timer), the device
+ *   publishes "time_unknown" instead of "online" on the heartbeat topic,
+ *   and Layer 2 is skipped entirely (no guessing) until a real time fix
+ *   arrives: a successful NTP sync (which also re-writes the RTC) clears
+ *   the RTC half, and a freshly-saved schedule (set_schedule command or
+ *   syncScheduleFromAPI) clears the schedule-checksum half.
+ *
+ * Per-relay fail-safe contract (fail_safe_default, cutoff_ceiling_seconds):
+ *   pushed by the backend as part of the existing relay-config MQTT push
+ *   (tankctl/{device_id}/config) and cached to NVS alongside gpio_pin/
+ *   active_level so it survives reboot without a live MQTT connection.
+ *   fail_safe_default defaults to "on" for a relay named "pump" and "off"
+ *   for everything else when a relay's config doesn't carry the field
+ *   (legacy NVS blob / older backend) - matches this file's long-standing
+ *   "pump fails safe on, light fails safe off" convention.
+ *
  * Memory Footprint:
  * - Static RAM: ~200 KB (relays array, JSON buffers, WiFi/MQTT libraries)
  * - Heap (normal): ~100 KB (runtime buffers, MQTT payloads)
@@ -42,22 +94,34 @@
  * NVS Storage (Preferences namespace "tankctl"):
  * - "tank_id": Device ID string
  * - "device_secret": Device registration secret
- * - "relays": JSON array of relay configurations
+ * - "relays": JSON array of relay configurations (now includes
+ *   fail_safe_default and cutoff_ceiling_seconds per relay)
  * - "sched_on_h", "sched_on_m", "sched_off_h", "sched_off_m": Schedule times
  * - "sched_enabled": Schedule enabled flag
- * 
+ * - "sched_valid": true once a schedule has been saved at least once
+ * - "sched_chk": checksum over the schedule fields above (Layer 4 integrity check)
+ *
  * Relay Configuration (NVS "relays"):
  * [
- *   {"relay_name": "light", "gpio_pin": 4, "active_level": "LOW"},
- *   {"relay_name": "pump", "gpio_pin": 12, "active_level": "LOW"}
+ *   {"relay_name": "light", "gpio_pin": 4, "active_level": "LOW",
+ *    "fail_safe_default": "off", "cutoff_ceiling_seconds": null},
+ *   {"relay_name": "pump", "gpio_pin": 12, "active_level": "LOW",
+ *    "fail_safe_default": "on", "cutoff_ceiling_seconds": null}
  * ]
- * 
+ *
  * Default Relay Config (if NVS empty):
- * - light: GPIO D4 (pin 4), active-LOW, OFF at boot
- * - pump: GPIO D12 (pin 12), active-LOW, ON at boot (fail-safe)
- * 
+ * - light: GPIO D4 (pin 4), active-LOW, fail_safe_default OFF
+ * - pump: GPIO D12 (pin 12), active-LOW, fail_safe_default ON (fail-safe)
+ * Every relay is forced to its fail_safe_default at boot (applyFailSafeDefaults()),
+ * then Layer 2 immediately re-evaluates the light relay if a schedule is cached
+ * and time is known.
+ *
  * Safety Considerations:
- * ✓ Pump defaults to ON (prevents water overflow in float mode)
+ * ✓ Every relay forced to fail_safe_default at boot, not left at boot-time GPIO level
+ * ✓ Independent hard-cutoff watchdog (Layer 3) enforces cutoff_ceiling_seconds
+ *   regardless of scheduler/command state
+ * ✓ time_unknown (Layer 4) forces fail-safe defaults and withholds the schedule
+ *   until a real time fix arrives
  * ✓ GPIO conflicts detected and rejected
  * ✓ Command version validation (idempotency)
  * ✓ Duplicate relay names rejected
@@ -121,7 +185,15 @@
 // Relay constraints
 #define MAX_RELAYS 10
 #define RELAY_NAME_MAX_LEN 32
-#define RELAY_CONFIG_JSON_MAX 512
+// Bumped from 512: each relay's config now also carries fail_safe_default
+// and cutoff_ceiling_seconds (Layer 3/4), so the same relay count needs
+// more bytes than the original gpio_pin/active_level-only payload.
+#define RELAY_CONFIG_JSON_MAX 1024
+
+// Layer 3: hard-cutoff watchdog tick interval - deliberately its own
+// interval/timer, not shared with SCHEDULE_CHECK_INTERVAL_MS, so nothing
+// about Layer 2's timing can affect it.
+#define WATCHDOG_CHECK_INTERVAL_MS 1000UL
 
 // ===== LIBRARIES =====
 #include <WiFi.h>
@@ -131,6 +203,9 @@
 #include <DallasTemperature.h>
 #include <Preferences.h>
 #include <time.h>
+#include <Wire.h>
+#include <RTClib.h>       // Adafruit RTClib - DS3231 driver (Layer 1)
+#include "secrets.h"       // Per-device MQTT credentials - NOT committed, see .gitignore
 
 // Random temp range for testing (disable sensor reading)
 #define USE_RANDOM_TEMP 1  // Set to 0 to use real DS18B20 sensor
@@ -143,6 +218,8 @@ struct RelayPin {
   uint8_t gpio_pin;
   char active_level[5];  // "LOW" or "HIGH"
   bool current_state;    // "on" or "off"
+  char fail_safe_default[4];  // "on" or "off" - Layer 2/4 boot & time_unknown target
+  int cutoff_ceiling_seconds; // Layer 3 hard-cutoff ceiling; -1 = no ceiling (fails open)
 };
 
 // ===== GLOBAL STATE =====
@@ -151,6 +228,7 @@ PubSubClient mqttClient(wifiClient);
 Preferences preferences;
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature sensors(&oneWire);
+RTC_DS3231 rtc;
 
 char tankId[TANK_ID_MAX_LEN] = {0};
 char deviceSecret[DEVICE_SECRET_MAX_LEN] = {0};
@@ -163,11 +241,22 @@ RelayPin relays[MAX_RELAYS];
 int relay_count = 0;
 bool relayStateChanged = false;  // Flag to publish reported state on any relay change
 
+// Layer 3: independent hard-cutoff watchdog state. Deliberately separate
+// from anything the scheduler (Layer 2) touches - see checkCutoffWatchdog().
+unsigned long relayOnSinceMs[MAX_RELAYS] = {0};
+
 int scheduleOnHour = 18;
 int scheduleOnMinute = 0;
 int scheduleOffHour = 6;
 int scheduleOffMinute = 0;
 bool scheduleEnabled = false;
+
+// Layer 1/4: RTC + time_unknown state. Both default to "unknown"/"unsafe"
+// until proven otherwise, so a crash/reset before initRtc() runs never
+// accidentally leaves the device trusting a clock it hasn't checked.
+bool rtcPresent = false;
+bool timeUnknownRtc = true;
+bool timeUnknownSchedule = false;
 
 unsigned long lastTelemetryMs = 0;
 unsigned long lastHeartbeatMs = 0;
@@ -176,6 +265,7 @@ unsigned long lastMqttRetryMs = 0;
 unsigned long lastHealthLogMs = 0;
 unsigned long lastNtpUpdateMs = 0;
 unsigned long lastScheduleCheckMs = 0;
+unsigned long lastWatchdogCheckMs = 0;
 unsigned long tempRequestMs = 0;
 bool wasWifiConnected = false;
 bool tempConversionInProgress = false;
@@ -203,6 +293,126 @@ bool isTimeInScheduleWindow(int currentHour, int currentMinute) {
 
   // Same-day window, e.g. 06:00 -> 18:00
   return (currentMinutes >= onMinutes) && (currentMinutes < offMinutes);
+}
+
+// ===== LAYER 1 / LAYER 4: RTC + time_unknown =====
+
+// True whenever the device does not trust its own clock, for either reason
+// (RTC never had valid time, or the cached schedule failed its checksum).
+// Layer 2 must not run while this is true.
+bool isTimeUnknown() {
+  return timeUnknownRtc || timeUnknownSchedule;
+}
+
+// Init the DS3231 over I2C (ESP32 default pins: SDA=21, SCL=22, see
+// PINOUT.md). Sets rtcPresent + timeUnknownRtc. Must run before any relay
+// GPIO is touched, since boot fail-safe behavior depends on its result.
+//
+// NOT VERIFIED ON HARDWARE - DS3231 module ordered but not arrived. Two
+// things specifically need confirming once it's in hand: (1) that
+// rtc.begin() actually returns false (rather than hanging or silently
+// succeeding) when no DS3231 is on the bus, and (2) that lostPower()
+// correctly reports true on a genuinely first-time/dead-battery chip. Both
+// are documented RTClib behavior but unverified in this repo.
+void initRtc() {
+  Wire.begin();  // SDA=21, SCL=22 (ESP32 default I2C pins)
+
+  if (!rtc.begin()) {
+    Serial.println("[RTC] ERROR: DS3231 not found on I2C bus (SDA=21/SCL=22). "
+                    "Staying in time_unknown until RTC hardware is present.");
+    rtcPresent = false;
+    timeUnknownRtc = true;
+    return;
+  }
+
+  rtcPresent = true;
+
+  if (rtc.lostPower()) {
+    Serial.println("[RTC] DS3231 lostPower() == true (dead battery or first boot) - "
+                    "no valid time. Entering time_unknown.");
+    timeUnknownRtc = true;
+  } else {
+    timeUnknownRtc = false;
+    DateTime now = rtc.now();
+    Serial.print("[RTC] DS3231 time OK: ");
+    Serial.print(now.year());  Serial.print("-");
+    Serial.print(now.month()); Serial.print("-");
+    Serial.print(now.day());   Serial.print(" ");
+    Serial.print(now.hour());  Serial.print(":");
+    Serial.println(now.minute());
+  }
+}
+
+// Called periodically once WiFi is up: if NTP has produced a real time and
+// we still don't trust the RTC, write NTP's time into the DS3231 and clear
+// timeUnknownRtc. Writes LOCAL time (matching how the rest of this file
+// already treats time via configTime()+TIMEZONE_OFFSET_SECONDS/localtime()),
+// not UTC - intentional, since isTimeInScheduleWindow() only ever compares
+// local wall-clock hour/minute, so there is no UTC/local conversion to get
+// wrong anywhere else in the sketch as long as this stays consistent.
+//
+// Deliberately builds the DateTime from calendar fields (year/month/day/...)
+// rather than a raw epoch integer - RTClib's DateTime(uint32_t) constructor
+// takes seconds-since-2000, not seconds-since-1970, and time(nullptr)/NTP
+// give seconds-since-1970. Passing one where the other is expected is a
+// classic ~30-year-off bug; building from tm fields sidesteps it entirely.
+// NOT VERIFIED ON HARDWARE - can't confirm rtc.adjust() actually lands
+// correctly on real silicon until the DS3231 arrives.
+void syncRtcFromNtpIfAvailable() {
+  if (!rtcPresent) {
+    return;  // nothing to write to
+  }
+
+  time_t now = time(nullptr);
+  if (now < 24 * 3600) {
+    return;  // NTP hasn't produced a real time yet
+  }
+
+  struct tm* timeinfo = localtime(&now);
+  if (timeinfo == nullptr) {
+    return;
+  }
+
+  rtc.adjust(DateTime(timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
+                       timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec));
+
+  if (timeUnknownRtc) {
+    timeUnknownRtc = false;
+    Serial.println("[RTC] Real time fix received via NTP - RTC updated, clearing time_unknown (RTC half)");
+  }
+}
+
+// Historical convention documented at the top of this file: pump fails
+// safe ON (prevents float-mode overflow), everything else fails safe OFF.
+// Used only as a fallback when a relay's config doesn't carry an explicit
+// fail_safe_default (legacy NVS blob, or a backend that predates the field).
+const char* defaultFailSafeForRelay(const char* relayName) {
+  return (strcmp(relayName, "pump") == 0) ? "on" : "off";
+}
+
+// Copies a validated "on"/"off" value into a fail_safe_default field. Never
+// trusts an unrecognized value into a safety-relevant field - falls back to
+// "off" (the more conservative default for anything that isn't the pump).
+void setFailSafeField(char* dest, const char* value) {
+  bool valid = value != nullptr &&
+               (strcmp(value, "on") == 0 || strcmp(value, "off") == 0);
+  const char* v = valid ? value : "off";
+  strncpy(dest, v, 3);
+  dest[3] = 0;
+}
+
+// FNV-1a style mix, just enough to catch flash corruption of the cached
+// schedule (Layer 4 trigger #2). Not a cryptographic checksum, doesn't need
+// to be - the failure mode we're guarding against is bit rot / partial
+// write, not tampering.
+uint32_t computeScheduleChecksum(int onH, int onM, int offH, int offM, bool enabled) {
+  uint32_t h = 2166136261UL;
+  h = (h ^ (uint32_t)onH) * 16777619UL;
+  h = (h ^ (uint32_t)onM) * 16777619UL;
+  h = (h ^ (uint32_t)offH) * 16777619UL;
+  h = (h ^ (uint32_t)offM) * 16777619UL;
+  h = (h ^ (uint32_t)(enabled ? 1 : 0)) * 16777619UL;
+  return h;
 }
 
 // ===== RELAY CONFIGURATION FUNCTIONS =====
@@ -349,7 +559,19 @@ void loadRelayConfigFromNVS() {
       }
     }
     if (gpioConflict) continue;
-    
+
+    // fail_safe_default / cutoff_ceiling_seconds (Layer 3/4) - optional,
+    // fall back to the historical pump-on/else-off convention and "no
+    // ceiling" respectively when a legacy NVS blob doesn't have them.
+    const char* failSafe = relayObj["fail_safe_default"] | defaultFailSafeForRelay(relayName);
+    int ceilingSeconds = -1;
+    if (relayObj.containsKey("cutoff_ceiling_seconds") && !relayObj["cutoff_ceiling_seconds"].isNull()) {
+      long c = relayObj["cutoff_ceiling_seconds"].as<long>();
+      if (c > 0) {
+        ceilingSeconds = (int)c;
+      }
+    }
+
     // Add relay
     strncpy(relays[relay_count].relay_name, relayName, RELAY_NAME_MAX_LEN - 1);
     relays[relay_count].relay_name[RELAY_NAME_MAX_LEN - 1] = 0;
@@ -357,7 +579,9 @@ void loadRelayConfigFromNVS() {
     strncpy(relays[relay_count].active_level, activeLevel, 4);
     relays[relay_count].active_level[4] = 0;
     relays[relay_count].current_state = false;
-    
+    setFailSafeField(relays[relay_count].fail_safe_default, failSafe);
+    relays[relay_count].cutoff_ceiling_seconds = ceilingSeconds;
+
     Serial.print("[Relay] Loaded: ");
     Serial.print(relayName);
     Serial.print(" on GPIO ");
@@ -376,21 +600,25 @@ void loadRelayConfigFromNVS() {
 // Set default relay configuration (light:D4, pump:D12)
 void setDefaultRelayConfig() {
   relay_count = 0;
-  
+
   // Light on GPIO 4 (D4)
   strncpy(relays[0].relay_name, "light", RELAY_NAME_MAX_LEN - 1);
   relays[0].gpio_pin = DEFAULT_LIGHT_GPIO;
   strncpy(relays[0].active_level, DEFAULT_ACTIVE_LEVEL, 4);
   relays[0].current_state = false;
+  setFailSafeField(relays[0].fail_safe_default, "off");
+  relays[0].cutoff_ceiling_seconds = -1;
   relay_count++;
-  
+
   // Pump on GPIO 12 (D12)
   strncpy(relays[1].relay_name, "pump", RELAY_NAME_MAX_LEN - 1);
   relays[1].gpio_pin = DEFAULT_PUMP_GPIO;
   strncpy(relays[1].active_level, DEFAULT_ACTIVE_LEVEL, 4);
   relays[1].current_state = true;  // Pump ON by default (fail-safe)
+  setFailSafeField(relays[1].fail_safe_default, "on");
+  relays[1].cutoff_ceiling_seconds = -1;
   relay_count++;
-  
+
   Serial.println("[Relay] Using default config: light (GPIO 4), pump (GPIO 12)");
 }
 
@@ -398,20 +626,84 @@ void setDefaultRelayConfig() {
 void saveRelayConfigToNVS() {
   StaticJsonDocument<RELAY_CONFIG_JSON_MAX> doc;
   JsonArray arr = doc.to<JsonArray>();
-  
+
   for (int i = 0; i < relay_count; i++) {
     JsonObject relayObj = arr.createNestedObject();
     relayObj["relay_name"] = relays[i].relay_name;
     relayObj["gpio_pin"] = relays[i].gpio_pin;
     relayObj["active_level"] = relays[i].active_level;
+    relayObj["fail_safe_default"] = relays[i].fail_safe_default;
+    if (relays[i].cutoff_ceiling_seconds > 0) {
+      relayObj["cutoff_ceiling_seconds"] = relays[i].cutoff_ceiling_seconds;
+    } else {
+      relayObj["cutoff_ceiling_seconds"] = nullptr;
+    }
   }
-  
+
   String configJson;
   serializeJson(doc, configJson);
   preferences.putString("relays", configJson);
-  
+
   Serial.print("[Relay] Config saved to NVS: ");
   Serial.println(configJson);
+}
+
+// Force every relay directly to its fail_safe_default. Used unconditionally
+// at boot (before Layer 2 gets a chance to run) and whenever the device is
+// in time_unknown - this is a boot/state-entry action, not gated on Layer
+// 3's timer at all.
+void applyFailSafeDefaults() {
+  for (int i = 0; i < relay_count; i++) {
+    setRelayState(i, relays[i].fail_safe_default);
+  }
+}
+
+// ===== LAYER 3: INDEPENDENT HARD-CUTOFF WATCHDOG =====
+// Deliberately does NOT call runSchedule(), setRelayState(), or share any
+// logic with the scheduler. It only reads relays[i].current_state (the one
+// ground-truth flag every control path already writes when it changes a
+// relay) and, past the ceiling, writes the GPIO pin directly itself using
+// getGPIOState() (a pure lookup, not scheduler logic). A bug in Layer 2 -
+// wrong time comparison, stuck "should be on" state, whatever - cannot
+// disable this, because this code never trusts *why* a relay is on, only
+// observes that it is and enforces the ceiling regardless.
+void checkCutoffWatchdog() {
+  unsigned long now = millis();
+
+  for (int i = 0; i < relay_count; i++) {
+    if (relays[i].cutoff_ceiling_seconds <= 0) {
+      continue;  // no ceiling configured for this relay (e.g. pump/filter, fails open)
+    }
+
+    if (!relays[i].current_state) {
+      // Relay is off right now - counter does not run. Reset defensively
+      // in case a previous config swap left a stale value here.
+      relayOnSinceMs[i] = 0;
+      continue;
+    }
+
+    if (relayOnSinceMs[i] == 0) {
+      // First tick where we observe this relay on - start counting now,
+      // regardless of what turned it on (schedule, command, boot default).
+      relayOnSinceMs[i] = now;
+      continue;
+    }
+
+    unsigned long elapsedSeconds = (now - relayOnSinceMs[i]) / 1000UL;
+    if (elapsedSeconds >= (unsigned long)relays[i].cutoff_ceiling_seconds) {
+      uint8_t pin = relays[i].gpio_pin;
+      digitalWrite(pin, getGPIOState(i, "off"));
+      relays[i].current_state = false;
+      relayOnSinceMs[i] = 0;
+      relayStateChanged = true;
+
+      Serial.print("[Watchdog] CUTOFF: forced ");
+      Serial.print(relays[i].relay_name);
+      Serial.print(" OFF after ");
+      Serial.print(elapsedSeconds);
+      Serial.println("s continuous-on (hard ceiling reached)");
+    }
+  }
 }
 
 // Publish all relay states to MQTT reported topic
@@ -463,25 +755,35 @@ void setup() {
   
   // Initialize Preferences (NVS - Non-Volatile Storage)
   preferences.begin("tankctl", false);
-  
+
+  // Layer 1: RTC, before anything relay-related - the fail-safe boot logic
+  // right below depends on whether we trust the clock yet.
+  initRtc();
+
   // Load relay configuration from NVS
   loadRelayConfigFromNVS();
-  
+
   // Initialize GPIO for all relays
   for (int i = 0; i < relay_count; i++) {
     initRelayGPIO(i);
   }
-  
-  // Set pump to ON at boot (fail-safe: prevent float mode)
-  int pumpIdx = findRelayIndex("pump");
-  if (pumpIdx >= 0) {
-    setRelayState(pumpIdx, "on");
-    Serial.println("[Boot] Pump set to ON (fail-safe)");
-  }
-  
-  // Load configuration
+
+  // Load configuration (tank ID/secret + cached schedule; also runs the
+  // Layer 4 checksum check on the cached schedule, setting
+  // timeUnknownSchedule if it fails)
   loadConfig();
-  
+
+  // Every relay starts at its fail_safe_default, never at whatever GPIO
+  // level it happened to power up in. This alone covers "no cached
+  // schedule yet" for the light relay, and (together with the RTC check
+  // above / schedule checksum check in loadConfig()) covers time_unknown -
+  // this is a boot-time action, it does not wait for Layer 3's timer.
+  applyFailSafeDefaults();
+  if (isTimeUnknown()) {
+    Serial.println("[Boot] time_unknown - relays held at fail_safe_default; "
+                    "the light schedule will not run until a real time fix arrives");
+  }
+
   // Build MQTT topics
   buildTopics();
   
@@ -554,9 +856,15 @@ void setup() {
     Serial.print(":");
     Serial.println(timeinfo->tm_min);
   }
-  
+
+  // If NTP got a real time and we didn't trust the RTC yet, this is the
+  // "real time fix" that can clear time_unknown (RTC half) - do it before
+  // the boot-time runSchedule() call below so a first-boot device with a
+  // dead/blank RTC can still recover to normal status in the same boot.
+  syncRtcFromNtpIfAvailable();
+
   runSchedule();
-  
+
   // Connect MQTT
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
@@ -617,13 +925,27 @@ void loop() {
     lastNtpUpdateMs = now;
     configTime(TIMEZONE_OFFSET_SECONDS, 0, "pool.ntp.org", "time.nist.gov");
   }
-  
-  // Run scheduler
+
+  // Run scheduler (Layer 2) - reads the RTC, never blocks on network
   if (now - lastScheduleCheckMs >= SCHEDULE_CHECK_INTERVAL_MS) {
     lastScheduleCheckMs = now;
     runSchedule();
+
+    // While we don't trust the RTC, retry the NTP->RTC fix every tick
+    // instead of waiting for the once-an-hour resync above - recovering
+    // from time_unknown shouldn't have to wait up to an hour.
+    if (timeUnknownRtc && wifiConnected) {
+      syncRtcFromNtpIfAvailable();
+    }
   }
-  
+
+  // Run the hard-cutoff watchdog (Layer 3) - own timer, own code path,
+  // completely independent of the scheduler above.
+  if (now - lastWatchdogCheckMs >= WATCHDOG_CHECK_INTERVAL_MS) {
+    lastWatchdogCheckMs = now;
+    checkCutoffWatchdog();
+  }
+
   // Publish telemetry
   if (now - lastTelemetryMs >= TELEMETRY_INTERVAL_MS) {
     lastTelemetryMs = now;
@@ -697,13 +1019,15 @@ void connectMQTT() {
   
   char clientId[48];
   snprintf(clientId, sizeof(clientId), "tankctl-esp32-%s", tankId);
-  
+
   Serial.print("Connecting to MQTT broker: ");
   Serial.print(MQTT_SERVER);
   Serial.print(":");
   Serial.println(MQTT_PORT);
-  
-  if (mqttClient.connect(clientId)) {
+
+  // Per-device username/password (secrets.h) - the broker no longer accepts
+  // anonymous connections (see Track 2/C of the fail-safe relay stack spec).
+  if (mqttClient.connect(clientId, MQTT_USERNAME, MQTT_PASSWORD)) {
     Serial.println("MQTT connected");
     
     // Subscribe to command topic
@@ -843,7 +1167,18 @@ void handleConfigMessage(byte* payload, unsigned int length) {
       }
     }
     if (nameConflict) continue;
-    
+
+    // fail_safe_default / cutoff_ceiling_seconds (Layer 3/4) - optional,
+    // same fallback rules as loadRelayConfigFromNVS().
+    const char* failSafe = relayObj["fail_safe_default"] | defaultFailSafeForRelay(relayName);
+    int ceilingSeconds = -1;
+    if (relayObj.containsKey("cutoff_ceiling_seconds") && !relayObj["cutoff_ceiling_seconds"].isNull()) {
+      long c = relayObj["cutoff_ceiling_seconds"].as<long>();
+      if (c > 0) {
+        ceilingSeconds = (int)c;
+      }
+    }
+
     // Add to temp config
     strncpy(tempRelays[newCount].relay_name, relayName, RELAY_NAME_MAX_LEN - 1);
     tempRelays[newCount].relay_name[RELAY_NAME_MAX_LEN - 1] = 0;
@@ -851,7 +1186,9 @@ void handleConfigMessage(byte* payload, unsigned int length) {
     strncpy(tempRelays[newCount].active_level, activeLevel, 4);
     tempRelays[newCount].active_level[4] = 0;
     tempRelays[newCount].current_state = false;
-    
+    setFailSafeField(tempRelays[newCount].fail_safe_default, failSafe);
+    tempRelays[newCount].cutoff_ceiling_seconds = ceilingSeconds;
+
     Serial.print("[Config] Validated: ");
     Serial.print(relayName);
     Serial.print(" on GPIO ");
@@ -870,8 +1207,18 @@ void handleConfigMessage(byte* payload, unsigned int length) {
   for (int i = 0; i < relay_count; i++) {
     relays[i] = tempRelays[i];
     initRelayGPIO(i);
+    // Land on fail_safe_default rather than the hardcoded "off" that
+    // initRelayGPIO() just wrote - if this is the light relay and a
+    // schedule is already cached, the next 1s Layer 2 tick corrects it;
+    // if not, this is exactly where it should sit until one arrives.
+    setRelayState(i, relays[i].fail_safe_default);
   }
-  
+
+  // A relay's identity/position may have changed - clear Layer 3's
+  // watchdog counters so a stale timer never gets attributed to the wrong
+  // relay at the same array index.
+  memset(relayOnSinceMs, 0, sizeof(relayOnSinceMs));
+
   // Save to NVS
   saveRelayConfigToNVS();
   
@@ -1166,7 +1513,9 @@ void publishHeartbeat() {
   }
   
   StaticJsonDocument<128> doc;
-  doc["status"] = "online";
+  // Layer 4: distinct status while the device doesn't trust its own clock -
+  // lets the backend tell "up but clock-blind" apart from "up and fine."
+  doc["status"] = isTimeUnknown() ? "time_unknown" : "online";
   doc["uptime_ms"] = millis();
   doc["rssi"] = WiFi.RSSI();
   doc["firmware_version"] = FIRMWARE_VERSION;
@@ -1181,22 +1530,34 @@ void publishHeartbeat() {
   Serial.println("Heartbeat sent");
 }
 
-// ===== SCHEDULER =====
+// ===== LAYER 2: LOCAL SCHEDULE ENGINE =====
+// Ticks every ~1s from loop(). Reads time from the DS3231 RTC directly -
+// never system/NTP time - so this keeps working correctly even if Wi-Fi/
+// MQTT has been down for hours. Never blocks on network.
 void runSchedule() {
+  if (isTimeUnknown()) {
+    // Do not guess. Relays are already held at fail_safe_default (applied
+    // at boot / on entry to time_unknown) - stay there until a real time
+    // fix arrives (see syncRtcFromNtpIfAvailable() / saveSchedule()).
+    return;
+  }
+
   if (!scheduleEnabled) {
-    // Silent if disabled - no need to log every second
+    // No cached schedule yet - already at fail_safe_default, nothing to
+    // reconcile against. Silent - no need to log every second.
     return;
   }
-  
-  time_t now = time(nullptr);
-  struct tm* timeinfo = localtime(&now);
-  if (timeinfo == nullptr) {
-    Serial.println("[Schedule] ERROR: timeinfo is null");
+
+  if (!rtcPresent) {
+    // Shouldn't happen (isTimeUnknown() covers this via timeUnknownRtc),
+    // but never fall back to system/NTP time here - that would defeat the
+    // entire point of Layer 2 being network-independent.
     return;
   }
-  
-  int currentHour = timeinfo->tm_hour;
-  int currentMinute = timeinfo->tm_min;
+
+  DateTime nowRtc = rtc.now();
+  int currentHour = nowRtc.hour();
+  int currentMinute = nowRtc.minute();
 
   // Keep light aligned with schedule window so power-loss reboots recover state.
   bool shouldBeOn = isTimeInScheduleWindow(currentHour, currentMinute);
@@ -1249,7 +1610,29 @@ void loadConfig() {
   scheduleOffHour = preferences.getInt("sched_off_h", 6);
   scheduleOffMinute = preferences.getInt("sched_off_m", 0);
   scheduleEnabled = preferences.getBool("sched_enabled", false);
-  
+
+  // Layer 4: schedule integrity check. "sched_valid" is only true once a
+  // schedule has genuinely been saved at least once (saveSchedule() sets
+  // it) - a brand-new device with nothing cached yet is NOT a checksum
+  // failure, it's just unconfigured (Layer 2 already handles that via
+  // scheduleEnabled == false -> fail_safe_default). A checksum mismatch on
+  // a schedule that WAS saved before means flash corruption - that's the
+  // real Layer 4 trigger.
+  bool schedValid = preferences.getBool("sched_valid", false);
+  if (schedValid) {
+    uint32_t storedChecksum = preferences.getUInt("sched_chk", 0);
+    uint32_t computedChecksum = computeScheduleChecksum(
+        scheduleOnHour, scheduleOnMinute, scheduleOffHour, scheduleOffMinute, scheduleEnabled);
+    if (storedChecksum != computedChecksum) {
+      timeUnknownSchedule = true;
+      Serial.println("[Schedule] ERROR: cached schedule failed checksum - entering time_unknown");
+    } else {
+      timeUnknownSchedule = false;
+    }
+  } else {
+    timeUnknownSchedule = false;  // nothing cached yet - not a corruption case
+  }
+
   Serial.print("Loaded config from NVS. Tank ID: ");
   Serial.println(tankId);
   Serial.print("Schedule: ");
@@ -1271,7 +1654,22 @@ void saveSchedule() {
   preferences.putInt("sched_off_h", scheduleOffHour);
   preferences.putInt("sched_off_m", scheduleOffMinute);
   preferences.putBool("sched_enabled", scheduleEnabled);
-  
+
+  uint32_t checksum = computeScheduleChecksum(
+      scheduleOnHour, scheduleOnMinute, scheduleOffHour, scheduleOffMinute, scheduleEnabled);
+  preferences.putUInt("sched_chk", checksum);
+  preferences.putBool("sched_valid", true);
+
+  // A schedule we just computed the checksum for ourselves is, by
+  // definition, internally consistent - this is the "fresh config push
+  // confirms schedule integrity" exit condition for time_unknown's
+  // schedule half (the RTC half, if also unresolved, still holds relays at
+  // fail_safe_default via isTimeUnknown() until NTP fixes that separately).
+  if (timeUnknownSchedule) {
+    timeUnknownSchedule = false;
+    Serial.println("[Schedule] Fresh schedule saved - clearing time_unknown (schedule half)");
+  }
+
   Serial.println("Schedule saved to NVS");
 }
 

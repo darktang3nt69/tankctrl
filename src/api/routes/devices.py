@@ -256,6 +256,7 @@ def register_device(request: DeviceRegisterRequest, session: Session = Depends(g
         return DeviceRegisterResponse(
             device_id=device.device_id,
             device_secret=device.device_secret,
+            mqtt_password=device.mqtt_password,
             status=device.status,
             created_at=isoformat_in_app_timezone(device.created_at),
         )

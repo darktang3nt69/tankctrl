@@ -97,6 +97,10 @@ pyproject.toml.bak
 *.hex
 *.bin
 
+# Arduino firmware secrets (per-device MQTT credentials, filled in at flash
+# time - see firmware/esp32/secrets.h for the placeholder/template)
+secrets.h
+
 # WhatsApp bot
 whatsapp-bot/node_modules/
 whatsapp-bot/session/

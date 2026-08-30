@@ -18,6 +18,11 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Grace period added on top of the raw on->off duration when deriving the
+# light relay's hard-cutoff ceiling from its schedule, so the watchdog
+# doesn't trip immediately if the schedule fires a little late.
+LIGHT_CEILING_GRACE_SECONDS = 1800
+
 
 class SchedulingService:
     """Service for light schedule management."""
@@ -80,9 +85,12 @@ class SchedulingService:
             self._register_scheduler_jobs(saved_schedule)
 
         logger.info("light_schedule_created", device_id=device_id)
-        
+
         # Apply current desired state immediately
         self._apply_current_state(saved_schedule)
+
+        # Keep the light relay's hard-cutoff ceiling in sync with the schedule
+        self._recompute_light_ceiling(saved_schedule)
 
         return saved_schedule
 
@@ -279,6 +287,67 @@ class SchedulingService:
             logger.error(
                 "apply_current_state_failed",
                 device_id=schedule.device_id,
+                error=str(e),
+            )
+
+    def _recompute_light_ceiling(self, schedule: LightSchedule) -> None:
+        """
+        Recompute and push the light relay's cutoff_ceiling_seconds after a
+        light_schedules write.
+
+        cutoff_ceiling_seconds = on->off duration (wraparound-safe for
+        overnight schedules) + LIGHT_CEILING_GRACE_SECONDS.
+
+        Skips silently if the device has no 'light' relay configured — not
+        every device has one.
+        """
+        from src.services.relay_config_service import RelayConfigService
+
+        device_id = schedule.device_id
+
+        try:
+            relay_service = RelayConfigService(self.session)
+            light_relay = relay_service.relay_repo.get_relay(device_id, "light")
+            if light_relay is None:
+                return
+
+            on_seconds = (
+                schedule.on_time.hour * 3600
+                + schedule.on_time.minute * 60
+                + schedule.on_time.second
+            )
+            off_seconds = (
+                schedule.off_time.hour * 3600
+                + schedule.off_time.minute * 60
+                + schedule.off_time.second
+            )
+            # % 86400 handles both the normal case (off > on) and an
+            # overnight-spanning schedule (off <= on) without a negative
+            # duration.
+            duration_seconds = (off_seconds - on_seconds) % 86400
+            ceiling = duration_seconds + LIGHT_CEILING_GRACE_SECONDS
+
+            relay_service.update_relay_config(
+                device_id=device_id,
+                relay_name="light",
+                cutoff_ceiling_seconds=ceiling,
+            )
+            relay_service.push_config_to_device(device_id)
+
+            logger.info(
+                "light_ceiling_recomputed",
+                device_id=device_id,
+                on_time=str(schedule.on_time),
+                off_time=str(schedule.off_time),
+                cutoff_ceiling_seconds=ceiling,
+            )
+        except Exception as e:
+            # Best-effort: the schedule write itself already succeeded and
+            # committed, so a failure here shouldn't roll that back or bubble
+            # up to the caller.
+            logger.error(
+                "light_ceiling_recompute_failed",
+                device_id=device_id,
                 error=str(e),
             )
 

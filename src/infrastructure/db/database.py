@@ -19,6 +19,8 @@ from src.infrastructure.db.models import (
     WarningAcknowledgementModel,
     DevicePushTokenModel,
     RelayConfigModel,
+    FirmwareReleaseModel,
+    FirmwareDeploymentModel,
 )
 from src.utils.logger import get_logger
 
@@ -73,6 +75,8 @@ class Database:
                     WarningAcknowledgementModel.__table__,
                     DevicePushTokenModel.__table__,
                     RelayConfigModel.__table__,
+                    FirmwareReleaseModel.__table__,
+                    FirmwareDeploymentModel.__table__,
                 ],
             )
             self._init_timescale_schema()

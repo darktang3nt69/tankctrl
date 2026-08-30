@@ -83,9 +83,10 @@ ESP32 GPIO 2 ─[220Ω]─ LED ─ GND
 
 ## Default I2C / SPI Pins
 
-### I2C (if used)
+### I2C (used for DS3231 RTC - fail-safe relay stack Layer 1)
 - SDA: GPIO 21
 - SCL: GPIO 22
+- DS3231 runs at 3.3V - no level shifter needed, same rail as the ESP32.
 
 ### SPI (if used)
 - MOSI: GPIO 23 ⚠️ (conflicts with temperature sensor!)

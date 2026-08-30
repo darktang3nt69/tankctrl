@@ -49,10 +49,15 @@ services:
       - "9001:9001"
     volumes:
       - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      # Whole directory (not individual file mounts) - mosquitto_passwd
+      # needs to create a backup file alongside passwd when it rewrites it,
+      # which needs the containing directory to be writable, not just the
+      # file itself.
+      - ./mosquitto-auth:/mosquitto/config/auth
       - mosquitto_data:/mosquitto/data
       - mosquitto_logs:/mosquitto/log
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/#' | head -n 1"]
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -u tankctl -P password -t healthcheck -m ok -q 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -98,6 +103,14 @@ services:
     container_name: tankctl-backend
     volumes:
       - ./google-services.json:/app/firebase-service-account.json:ro
+      - ./mosquitto-auth:/mosquitto/config/auth
+      # Docker socket: lets the backend send SIGHUP to the mosquitto
+      # container after provisioning a device's MQTT credentials, so the
+      # broker picks up new users/ACLs without a restart. This grants the
+      # backend container effectively root-equivalent host access via the
+      # Docker API — acceptable for this self-hosted single-node setup, but
+      # worth knowing if you're hardening this further.
+      - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env
     ports:

@@ -18,6 +18,10 @@ psycopg2-binary==2.9.9
 # MQTT Client
 paho-mqtt==1.6.1
 
+# Docker API client (used to SIGHUP the mosquitto container after
+# provisioning MQTT credentials, so the broker reloads passwd/acl files)
+docker==7.1.0
+
 # Task Scheduling
 apscheduler==3.10.4
 

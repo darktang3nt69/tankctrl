@@ -23,6 +23,7 @@ from src.repository.device_repository import (
 from src.repository.light_schedule_repository import LightScheduleRepository
 from src.repository.telemetry_repository import CommandRepository, TelemetryRepository
 from src.repository.water_schedule_repository import WaterScheduleRepository
+from src.infrastructure.mqtt.broker_credentials import provision_device_credentials
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,14 +32,19 @@ logger = get_logger(__name__)
 def generate_device_secret(length: int = 16) -> str:
     """
     Generate a cryptographically secure random device secret.
-    
+
     Args:
         length: Length of the secret (default 16 characters)
-    
+
     Returns:
         Random hex string suitable for device authentication
     """
     return secrets.token_hex(length // 2)
+
+
+def generate_mqtt_password(length: int = 24) -> str:
+    """Generate a cryptographically secure random MQTT broker password."""
+    return secrets.token_urlsafe(length)
 
 
 def _iso(dt) -> Optional[str]:
@@ -87,6 +93,7 @@ class DeviceService:
 
         # Generate secure secret
         device_secret = generate_device_secret()
+        mqtt_password = generate_mqtt_password()
 
         # Create device with default temperature thresholds
         device = Device(
@@ -95,9 +102,11 @@ class DeviceService:
             status="offline",
             temp_threshold_low=22.0,      # Default min temp
             temp_threshold_high=30.0,     # Default max temp
+            mqtt_password=mqtt_password,
         )
 
         registered = self.device_repo.create(device)
+        self._provision_mqtt_credentials(device_id, mqtt_password)
 
         # Create associated shadow (initially empty, will be populated after relays are registered)
         shadow = DeviceShadow(device_id=device_id)
@@ -113,6 +122,17 @@ class DeviceService:
         event_publisher.publish(event)
 
         return registered
+
+    def _provision_mqtt_credentials(self, device_id: str, mqtt_password: str) -> None:
+        """
+        Write the device's MQTT password + readwrite ACL stanza
+        (tankctl/<device_id>/#) and reload the broker so the device can
+        connect immediately after registration.
+        """
+        try:
+            provision_device_credentials(device_id, mqtt_password)
+        except Exception as e:
+            logger.warning("failed_to_provision_mqtt_credentials", device_id=device_id, error=str(e))
 
     def _create_default_schedule(self, device_id: str) -> None:
         """Create the default light schedule (2 PM to 8 PM) for a newly registered device."""
@@ -191,26 +211,34 @@ class DeviceService:
         rssi: int | None = None,
         wifi_status: str | None = None,
         firmware_version: str | None = None,
+        status: str | None = None,
     ) -> None:
         """
         Handle device heartbeat message.
 
-        Marks device as online and updates last_seen.
+        Marks device online, or time_unknown if the device reports it doesn't
+        trust its own clock (fail-safe relay stack Layer 4), and updates
+        last_seen.
 
         Args:
             device_id: Device ID
             uptime_ms: Device uptime in milliseconds
             rssi: WiFi signal strength in dBm
             wifi_status: WiFi connection status string
+            status: Status reported by the device heartbeat payload
+                ("online" or "time_unknown"); anything else defaults to online.
         """
         device = self.device_repo.get_by_id(device_id)
         if not device:
             logger.warning("heartbeat_device_not_found", device_id=device_id)
             return
 
-        # Mark device as online and update heartbeat diagnostics
+        # Mark device as online (or time_unknown) and update heartbeat diagnostics
         was_offline = device.status != "online"
-        device.mark_online()
+        if status == "time_unknown":
+            device.mark_time_unknown()
+        else:
+            device.mark_online()
         if uptime_ms is not None:
             device.uptime_ms = uptime_ms
         if rssi is not None:

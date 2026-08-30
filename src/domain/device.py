@@ -59,6 +59,13 @@ class Device:
     description: str | None = None
     """User notes or description for the device"""
 
+    mqtt_password: str | None = None
+    """
+    MQTT broker password, generated once at registration. Transient only —
+    not a DB column, not persisted, not retrievable after the registration
+    response returns it (same handling class as an API key).
+    """
+
     def is_online(self, timeout_seconds: int = 60) -> bool:
         """
         Check if device is currently online.
@@ -83,6 +90,11 @@ class Device:
     def mark_offline(self) -> None:
         """Mark device as offline."""
         self.status = "offline"
+
+    def mark_time_unknown(self) -> None:
+        """Device is up but doesn't trust its own clock (Layer 4 fail-safe)."""
+        self.status = "time_unknown"
+        self.last_seen = datetime.utcnow()
 
 
 @dataclass

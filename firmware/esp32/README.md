@@ -26,6 +26,7 @@ Optimized firmware for **ESP32 WROOM 32D** microcontroller.
 Relay Control    → GPIO 4
 Temperature      → GPIO 23 (1-Wire)
 Status LED       → GPIO 2 (optional, built-in on many boards)
+RTC (DS3231)     → I2C: SDA GPIO 21, SCL GPIO 22 (3.3V, no level shifter needed)
 ```
 
 ### Wiring Diagram
@@ -37,6 +38,11 @@ ESP32 GND    → DS18B20 GND
 ESP32 3V3    → DS18B20 VCC (via pullup)
 
 ESP32 Pin 2  → Status LED (via 220Ω resistor to GND)
+
+ESP32 Pin 21 (SDA) → DS3231 SDA
+ESP32 Pin 22 (SCL) → DS3231 SCL
+ESP32 3V3          → DS3231 VCC
+ESP32 GND          → DS3231 GND
 ```
 
 ## Required Libraries
@@ -59,7 +65,18 @@ Install via Arduino IDE: **Library Manager**
    - OneWire protocol
    - `Search "OneWire"`
 
-**Note:** WiFi and Preferences are built-in to ESP32 core. No additional installation needed.
+5. **RTClib** (Adafruit, v2.1.0+)
+   - DS3231 RTC driver (fail-safe relay stack Layer 1)
+   - `Search "RTClib" by Adafruit in Library Manager`
+
+**Note:** WiFi, Wire, and Preferences are built-in to ESP32 core. No additional installation needed for those.
+
+## Secrets (MQTT credentials)
+
+The broker requires per-device MQTT authentication. Copy the placeholder
+`firmware/esp32/secrets.h` (not committed - see `.gitignore`) and fill in
+the real `MQTT_USERNAME`/`MQTT_PASSWORD` issued at device registration
+before flashing.
 
 ## Installation & Setup
 

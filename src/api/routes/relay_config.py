@@ -33,6 +33,8 @@ def _serialize_relay(relay_config) -> RelayConfigResponse:
         gpio_pin=relay_config.gpio_pin,
         active_level=relay_config.active_level,
         default_state=relay_config.default_state,
+        fail_safe_default=relay_config.fail_safe_default,
+        cutoff_ceiling_seconds=relay_config.cutoff_ceiling_seconds,
         created_at=isoformat_in_app_timezone(relay_config.created_at),
         updated_at=isoformat_in_app_timezone(relay_config.updated_at),
     )
@@ -120,6 +122,8 @@ def create_relay(
                 device_id=device_id,
                 relay_name=request.relay_name,
                 gpio_pin=request.gpio_pin,
+                fail_safe_default=request.fail_safe_default,
+                cutoff_ceiling_seconds=request.cutoff_ceiling_seconds,
                 active_level=request.active_level,
                 default_state=request.default_state,
             )
@@ -194,6 +198,8 @@ def update_relay(
                 device_id=device_id,
                 relay_name=relay_name,
                 gpio_pin=request.gpio_pin,
+                fail_safe_default=request.fail_safe_default,
+                cutoff_ceiling_seconds=request.cutoff_ceiling_seconds,
                 active_level=request.active_level,
                 default_state=request.default_state,
             )

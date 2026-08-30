@@ -4,6 +4,12 @@
 **Effective**: May 25, 2026  
 **Backward Compatible**: Yes (legacy commands still work)
 
+**Authentication**: The broker no longer accepts anonymous connections.
+The device connects with a per-device username (`device_id`) and password
+issued at registration time, baked into `firmware/esp32/secrets.h` (not
+committed - copy the placeholder and fill in real values per device at
+flash time).
+
 ---
 
 ## Topics
@@ -123,12 +129,26 @@ mosquitto_pub -h 192.168.1.100 -t tankctl/POND-ESP32/command -m '{"command":"reb
     {
       "relay_name": "<string>",
       "gpio_pin": <0-39>,
-      "active_level": "LOW|HIGH"
+      "active_level": "LOW|HIGH",
+      "fail_safe_default": "on|off",
+      "cutoff_ceiling_seconds": <int or null>
     },
     ...
   ]
 }
 ```
+
+**Fail-safe relay contract** (`fail_safe_default`, `cutoff_ceiling_seconds`):
+- `fail_safe_default`: GPIO state the device forces this relay to at boot
+  and whenever it enters `time_unknown` (see status section below).
+  Optional in the payload for backward compatibility - if omitted, the
+  device falls back to `"on"` for a relay named `pump` and `"off"` for
+  everything else.
+- `cutoff_ceiling_seconds`: hard continuous-on ceiling enforced by an
+  independent on-device watchdog, regardless of scheduler/command state.
+  `null`/omitted means no ceiling (relay fails open, e.g. filter/pump).
+- Both fields are cached to NVS alongside `gpio_pin`/`active_level`, so
+  they survive reboot without a live MQTT connection.
 
 **Example**: Configure light (GPIO 4) and pump (GPIO 12)
 ```bash
@@ -157,7 +177,7 @@ mosquitto_pub -h 192.168.1.100 -t tankctl/POND-ESP32/config -m '{
 - No duplicate relay names
 - active_level must be "LOW" or "HIGH"
 - Max 10 relays per device
-- Max config payload: 512 bytes
+- Max config payload: 1024 bytes (bumped from 512 to fit fail_safe_default/cutoff_ceiling_seconds per relay)
 
 **Error Handling**:
 - Invalid GPIO: rejected, previous config kept
@@ -233,6 +253,13 @@ mosquitto_sub -h 192.168.1.100 -t tankctl/POND-ESP32/reported
   "free_heap": <bytes>
 }
 ```
+
+`status` is `"online"` normally, or `"time_unknown"` when the device does
+not trust its own clock (DS3231 `lostPower()` at boot, or the cached
+schedule failed its checksum) - the on-device light schedule is withheld
+and every fail-safe-contracted relay is held at its `fail_safe_default`
+while in this state. It resumes `"online"` once a real time fix lands (NTP
+sync, or a fresh schedule push).
 
 **Example**:
 ```json

@@ -41,10 +41,17 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     postgresql-client \
+    mosquitto-clients \
+    mosquitto \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
-RUN useradd -m -u 1000 -s /bin/bash tankctl
+RUN useradd -m -u 1000 -s /bin/bash tankctl && \
+    # Docker Desktop's docker.sock (bind-mounted so we can SIGHUP the
+    # mosquitto container after provisioning MQTT credentials) is
+    # root:root, group-writable. Add tankctl to root's group so it can use
+    # it without running the whole container as root.
+    usermod -aG root tankctl
 
 # Copy wheels from builder
 COPY --from=builder /build/wheels /wheels

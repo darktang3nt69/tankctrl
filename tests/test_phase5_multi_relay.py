@@ -62,7 +62,7 @@ class CommandServiceRelayValidationTests(unittest.TestCase):
         # Mock RelayConfigService
         relay_service = relay_service_cls.return_value
         relay_service.get_device_relay_config.return_value = {
-            "pump": RelayConfig(relay_name="pump", gpio_pin=12),
+            "pump": RelayConfig(relay_name="pump", gpio_pin=12, fail_safe_default="off"),
         }
         
         # Should not raise
@@ -80,7 +80,7 @@ class CommandServiceRelayValidationTests(unittest.TestCase):
         
         relay_service = relay_service_cls.return_value
         relay_service.get_device_relay_config.return_value = {
-            "pump": RelayConfig(relay_name="pump", gpio_pin=12),
+            "pump": RelayConfig(relay_name="pump", gpio_pin=12, fail_safe_default="off"),
         }
         
         # Should raise ValueError for invalid value
@@ -161,7 +161,7 @@ class CommandServiceRelayValidationTests(unittest.TestCase):
         # Mock RelayConfigService
         relay_service = relay_service_cls.return_value
         relay_service.get_device_relay_config.return_value = {
-            "pump": RelayConfig(relay_name="pump", gpio_pin=12),
+            "pump": RelayConfig(relay_name="pump", gpio_pin=12, fail_safe_default="off"),
         }
         
         # Send command
@@ -327,12 +327,14 @@ class DeviceServiceMultiRelayInitializationTests(unittest.TestCase):
             RelayConfig(
                 relay_name="light",
                 gpio_pin=4,
+                fail_safe_default="off",
                 active_level="LOW",
                 default_state="off",
             ),
             RelayConfig(
                 relay_name="pump",
                 gpio_pin=12,
+                fail_safe_default="on",
                 active_level="LOW",
                 default_state="off",
             ),

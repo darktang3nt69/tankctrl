@@ -35,6 +35,7 @@ from datetime import datetime
 from typing import Dict, Optional
 
 import paho.mqtt.client as mqtt
+import requests
 
 
 # Configure logging
@@ -65,27 +66,27 @@ class SimulatedDevice:
         self,
         device_id: str,
         device_secret: str,
+        mqtt_password: str,
         broker_host: str = "localhost",
         broker_port: int = 1883,
-        username: str = "tankctl",
-        password: str = "password",
     ):
         """Initialize a simulated device.
 
         Args:
             device_id: Unique device identifier (e.g., 'tank1')
-            device_secret: Device authentication secret
+            device_secret: Device authentication secret (API registration secret)
+            mqtt_password: Per-device MQTT broker password issued at registration.
+                MQTT username is always the device_id (broker ACLs scope each
+                device to its own tankctl/<device_id>/# topics).
             broker_host: MQTT broker hostname
             broker_port: MQTT broker port
-            username: MQTT broker username
-            password: MQTT broker password
         """
         self.device_id = device_id
         self.device_secret = device_secret
         self.broker_host = broker_host
         self.broker_port = broker_port
-        self.mqtt_username = username
-        self.mqtt_password = password
+        self.mqtt_username = device_id
+        self.mqtt_password = mqtt_password
 
         # Internal device state
         self.state = DeviceState()
@@ -404,8 +405,8 @@ class DeviceSimulator:
         device_count: int = 10,
         broker_host: str = "localhost",
         broker_port: int = 1883,
-        mqtt_username: str = "tankctl",
-        mqtt_password: str = "password",
+        api_url: str = "http://localhost:8000",
+        credentials: Optional[Dict[str, str]] = None,
     ):
         """Initialize device simulator.
 
@@ -413,32 +414,61 @@ class DeviceSimulator:
             device_count: Number of devices to simulate
             broker_host: MQTT broker hostname
             broker_port: MQTT broker port
-            mqtt_username: MQTT broker username
-            mqtt_password: MQTT broker password
+            api_url: TankCtl backend API URL, used to self-register any
+                device_id not already present in `credentials`
+            credentials: Optional pre-known device_id -> mqtt_password map
+                (e.g. from a caller that already registered these devices).
+                Devices not listed here are registered via the API.
         """
         self.device_count = device_count
         self.broker_host = broker_host
         self.broker_port = broker_port
-        self.mqtt_username = mqtt_username
-        self.mqtt_password = mqtt_password
+        self.api_url = api_url
+        self.credentials: Dict[str, str] = dict(credentials or {})
         self.devices: Dict[str, SimulatedDevice] = {}
         self._tasks: list = []
 
+    def _register_device(self, device_id: str) -> Optional[str]:
+        """Register device_id via the backend API, returning its mqtt_password.
+
+        If the device is already registered (409), it's deleted and
+        re-registered so we get a fresh credential — acceptable for a
+        simulator/dev-tool where devices are disposable, but not a pattern
+        to reuse against real device data.
+        """
+        try:
+            resp = requests.post(f"{self.api_url}/devices", json={"device_id": device_id}, timeout=5)
+            if resp.status_code == 201:
+                return resp.json()["mqtt_password"]
+            if resp.status_code == 409:
+                requests.delete(f"{self.api_url}/devices/{device_id}", timeout=5)
+                resp = requests.post(f"{self.api_url}/devices", json={"device_id": device_id}, timeout=5)
+                if resp.status_code == 201:
+                    return resp.json()["mqtt_password"]
+            logger.error(f"registration_failed device_id={device_id} status={resp.status_code} body={resp.text}")
+        except Exception as e:
+            logger.error(f"registration_error device_id={device_id} error={str(e)}")
+        return None
+
     async def _create_devices(self) -> None:
-        """Create simulated devices."""
+        """Create simulated devices, registering each for MQTT credentials."""
         logger.info(f"Creating {self.device_count} simulated devices...")
 
         for i in range(1, self.device_count + 1):
             device_id = f"tank{i}"
             device_secret = f"secret_{device_id}"
 
+            mqtt_password = self.credentials.get(device_id) or self._register_device(device_id)
+            if mqtt_password is None:
+                logger.error(f"skipping device {device_id}: could not obtain MQTT credentials")
+                continue
+
             device = SimulatedDevice(
                 device_id=device_id,
                 device_secret=device_secret,
+                mqtt_password=mqtt_password,
                 broker_host=self.broker_host,
                 broker_port=self.broker_port,
-                username=self.mqtt_username,
-                password=self.mqtt_password,
             )
 
             self.devices[device_id] = device
@@ -525,16 +555,11 @@ async def main():
         help="MQTT broker port (default: 1883)",
     )
     parser.add_argument(
-        "--username",
+        "--api-url",
         type=str,
-        default="tankctl",
-        help="MQTT broker username (default: tankctl)",
-    )
-    parser.add_argument(
-        "--password",
-        type=str,
-        default="password",
-        help="MQTT broker password (default: password)",
+        default="http://localhost:8000",
+        help="TankCtl backend API URL, used to register devices and obtain "
+        "per-device MQTT credentials (default: http://localhost:8000)",
     )
 
     args = parser.parse_args()
@@ -544,15 +569,14 @@ async def main():
     logger.info("=" * 60)
     logger.info(f"Devices: {args.devices}")
     logger.info(f"Broker: {args.broker}:{args.port}")
-    logger.info(f"Username: {args.username}")
+    logger.info(f"API: {args.api_url}")
     logger.info("=" * 60)
 
     simulator = DeviceSimulator(
         device_count=args.devices,
         broker_host=args.broker,
         broker_port=args.port,
-        mqtt_username=args.username,
-        mqtt_password=args.password,
+        api_url=args.api_url,
     )
 
     try:

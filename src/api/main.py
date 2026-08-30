@@ -17,6 +17,7 @@ from src.infrastructure.mqtt.handlers import (
     TelemetryHandler,
 )
 from src.infrastructure.mqtt.mqtt_client import mqtt_client
+from src.infrastructure.mqtt.broker_credentials import ensure_backend_credential
 from src.infrastructure.scheduler.scheduler import TankCtlScheduler
 from src.infrastructure.events.event_publisher import event_publisher
 from src.infrastructure.events.event_store import event_store_handler
@@ -69,6 +70,12 @@ async def lifespan(app: FastAPI):
         event_publisher.subscribe("light_state_changed", alert_service.handle_light_state_change_event)
         logger.info("event_system_ready")
         
+        # Ensure the backend's shared MQTT credential has full broker access
+        # before we try to connect — allow_anonymous is false, so the very
+        # first boot needs this or the connect below will be rejected.
+        logger.info("mqtt_credential_ensuring")
+        ensure_backend_credential()
+
         # Connect to MQTT — non-fatal on startup; paho reconnects automatically
         logger.info("mqtt_connecting")
         mqtt_client.register_handler("telemetry", TelemetryHandler())
