@@ -1,0 +1,78 @@
+.water-calendar {
+  padding: 16px;
+}
+
+.water-calendar__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.water-calendar__month {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 140px;
+  text-align: center;
+}
+
+.water-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.water-calendar__weekday {
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-faint);
+  padding: 4px 0;
+}
+
+.water-calendar__cell {
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-dim);
+  font-size: 12px;
+  cursor: default;
+}
+
+.water-calendar__cell--empty {
+  border-color: transparent;
+  background: transparent;
+}
+
+.water-calendar__cell--marked {
+  background: var(--accent-fill);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.water-calendar__cell--selected {
+  outline: 2px solid var(--accent);
+}
+
+.water-calendar__detail {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.water-calendar__entry {
+  margin-bottom: 8px;
+}
+
+.water-calendar__entry-date {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.water-calendar__entry-params {
+  color: var(--ink-dim);
+  font-size: 12px;
+}
