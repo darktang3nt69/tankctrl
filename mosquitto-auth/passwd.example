@@ -1,0 +1,11 @@
+# Mosquitto password file for TankCtl (mosquitto_passwd format: user:hash).
+#
+# Copy this file to mosquitto-auth/passwd (gitignored) and generate a real
+# entry matching MQTT_USERNAME / MQTT_PASSWORD in .env, e.g. for the
+# .env.example default (tankctl / password):
+#
+#   docker run --rm -v "$PWD/mosquitto-auth:/auth" eclipse-mosquitto \
+#     mosquitto_passwd -b /auth/passwd tankctl password
+#
+# Don't commit the generated file. Regenerate with a strong password for
+# anything beyond local dev.

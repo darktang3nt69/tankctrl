@@ -101,6 +101,10 @@ pyproject.toml.bak
 # time - see firmware/esp32/secrets.h for the placeholder/template)
 secrets.h
 
+# Mosquitto broker auth (generated locally from mosquitto-auth/*.example)
+mosquitto-auth/passwd
+mosquitto-auth/acl
+
 # WhatsApp bot
 whatsapp-bot/node_modules/
 whatsapp-bot/session/

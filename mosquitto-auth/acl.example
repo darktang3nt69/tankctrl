@@ -1,0 +1,13 @@
+# Mosquitto ACL file for TankCtl.
+#
+# This file is bind-mounted read-write into both the mosquitto and backend
+# containers (see docker-compose.yml). The backend's shared credential gets
+# full broker access below; per-device stanzas (readwrite on
+# tankctl/<device_id>/# only) are appended automatically by
+# src/services/device_service.py on device registration, and the broker is
+# sent SIGHUP to reload this file without a restart.
+#
+# Copy this file to mosquitto-auth/acl (gitignored) to bootstrap local dev.
+
+user tankctl
+topic readwrite #
