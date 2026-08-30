@@ -45,6 +45,12 @@ doesn't have to re-litigate them:
    adding one is a second new subsystem stacked on an already-large
    migration. Manual verification matches CLAUDE.md's existing rule for UI
    changes (verify in the browser, not just type-check).
+7. **Overview sparkline goes WS-live**, not just visually polished on top
+   of the existing 60s poll — reuses the live-tail pattern Tank Detail's
+   `'live'` chart range already established, rather than inventing a
+   second telemetry-freshness mechanism.
+8. **Sparkline gets a marker dot on every point**, not just on the latest
+   (pulsing) point.
 
 ## Architecture
 
@@ -84,7 +90,8 @@ doesn't have to re-litigate them:
 | `StatusPill.tsx` | shadcn `Badge`, existing status→color logic kept, re-expressed as Badge variants |
 | `.data-table` (`ui.css`) | shadcn `Table` |
 | `WaterHistoryCalendar.tsx` | shadcn `Calendar` (react-day-picker) with a custom day-cell renderer (`components`/`DayButton` override) carrying the logged/scheduled marker logic (see "Water calendar" below) |
-| `EmptyState`, `StatTile`, `LineChart`, `Sparkline`, `SearchFilterBar` | **Stay hand-rolled.** 01_spec.md's hand-rolled-SVG-chart rule is unaffected by this migration — only reskinned with Tailwind utilities + shadcn tokens instead of scoped CSS files. |
+| `EmptyState`, `StatTile`, `SearchFilterBar` | **Stay hand-rolled.** 01_spec.md's hand-rolled-SVG-chart rule is unaffected by this migration — only reskinned with Tailwind utilities + shadcn tokens instead of scoped CSS files. |
+| `LineChart`, `Sparkline` | Stay hand-rolled (same rule), reskinned — plus gain tooltips and (`Sparkline`) live data + point markers, see "Graph tooltips" and "Live sparkline" below. |
 
 All per-component CSS files (`AppShell.css`, `EmptyState.css`,
 `LineChart.css`, `SearchFilterBar.css`, `StatTile.css`, `StatusPill.css`,
@@ -143,6 +150,44 @@ fails on a backend addition. `device_warning` rows additionally surface
 `meta.code` (already read for the acknowledge action) as a sub-label where
 present, since "Warning" alone isn't specific enough.
 
+## Graph tooltips
+
+`LineChart` already tracks `hoverIdx` and renders a text readout below the
+chart, but no floating tooltip follows the cursor. Add one using the new
+shadcn `Tooltip` primitive (Radix-based — added to the Build order's
+primitive-generation step): shown while hovering the plot area, positioned
+at the hovered point, content = formatted time + value + unit (same data
+already backing the below-chart readout, which stays as-is for
+keyboard/non-hover accessibility — the tooltip is additive, not a
+replacement). Sparkline dots (see below) get the same `Tooltip` primitive
+on hover, showing just the value (no time axis on a sparkline).
+
+## Live sparkline (TankCard / Overview)
+
+Today `Sparkline` is decorative-only (`aria-hidden`, no dots, no hover) and
+`TankCard` feeds it from `useSparkline`, a 60s-polled query. This adds:
+
+- **Live data**: a new `useLiveSparkline(deviceId)` hook mirroring the
+  live-tail pattern `useTankTelemetry.ts` already uses for Tank Detail's
+  `'live'` chart range — seed from the existing `useSparkline` query
+  (last 12 points), then append via
+  `useLiveEvent(['telemetry_received'], ...)` filtered to that device,
+  ring-buffered to the sparkline's point cap (matches current `limit=12`)
+  so an open Overview page doesn't grow memory per card. When
+  `useLiveConnectionStatus()` reports `'polling-fallback'`, the existing
+  60s `refetchInterval` on `useSparkline` already covers the fallback —
+  no new polling logic needed.
+  - Scale note: Overview can hold 20+ cards (per 01_spec.md's scale
+    requirement); each mounts one filtered `useLiveEvent` listener off the
+    single shared WebSocket connection — cheap (one socket, N handlers),
+    the same fan-out pattern `useGlobalLiveSync.ts` already uses.
+- **Visual**: a small dot marker at every point (not a bare polyline), plus
+  a pulsing marker at the latest point — CSS/SVG animation, reusing the
+  series color prop, respecting `prefers-reduced-motion` per the existing
+  motion rule (01_spec.md).
+- **Tooltip**: hovering a dot shows its value via the shadcn `Tooltip`
+  primitive (see "Graph tooltips" above).
+
 ## Build order
 
 Internal staging only — this ships as one migration, not a series of
@@ -151,9 +196,10 @@ separately-released increments:
 1. Foundation: Tailwind + shadcn init, token/theme mapping, `next-themes`.
    App still compiles with old CSS files present but unused by new code.
 2. Generate primitives via `shadcn add`: button, card, tabs, dialog, badge,
-   input, select, textarea, form, calendar, table, sonner.
+   input, select, textarea, form, calendar, table, sonner, tooltip.
 3. Rewrite shared components: `AppShell`, `Tabs`, `Toast`→sonner,
-   `StatusPill`→`Badge`, `EmptyState`, `StatTile`.
+   `StatusPill`→`Badge`, `EmptyState`, `StatTile`, `LineChart` (+ tooltip),
+   `Sparkline` (+ live data, point markers, pulsing latest dot, tooltip).
 4. Rewrite routes: `Overview`, `Alerts` (incl. event-label map), `Settings`,
    `TankDetail`.
 5. Rewrite tank-detail tabs/forms: `CommandsTab`, `LightTab`, `RelaysTab`,
@@ -179,6 +225,14 @@ UI changes, verification is a dev-server walkthrough, not a claimed pass:
   dropdown shows labels not raw strings, acknowledge action still works,
   an unrecognized event type falls back to the raw string without erroring.
 - Toast notifications (success and error paths) fire correctly via sonner.
+- LineChart tooltip appears on hover, follows the cursor, matches the
+  below-chart readout's value; keyboard/no-hover path (the readout row)
+  still works.
+- Overview cards: sparkline shows a dot per point, latest dot pulses,
+  hovering a dot shows its tooltip, and a live `telemetry_received` event
+  actually moves the line (not just the 60s poll) — confirm by watching a
+  card update without waiting a minute. `polling-fallback` state (e.g. by
+  blocking the WS in devtools) still updates the sparkline within 60s.
 - Theme toggle: light and dark both readable, no flash-of-wrong-theme on
   reload, `prefers-reduced-motion` still respected.
 - **Spacing/alignment audit**: visually check padding/gap consistency
