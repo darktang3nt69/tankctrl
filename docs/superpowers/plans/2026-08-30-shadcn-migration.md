@@ -15,10 +15,10 @@
 - **No new test framework.** Every task's verification is `npm run dev` + a browser check, not a unit test — per the spec's Testing decision. There is no `pytest`-equivalent for this frontend.
 - **Button variant mapping** (used throughout — decided once here, not re-derived per task): existing `.btn` → shadcn `Button` `variant="outline"`; `.btn--primary` → `variant="default"`; `.btn--danger` → `variant="destructive"`; `.btn--ghost` → `variant="ghost"`.
 - **Path alias**: `@/*` → `./src/*` (added in Task 1). All new/rewritten files import shadcn primitives as `@/components/ui/<name>` and the class helper as `@/lib/utils`. Existing app code keeps its current relative-import style — do not mass-convert unrelated imports to `@/`.
-- **Toast**: `sonner`'s `toast()` / `toast.error()` replaces `useToast()`/`ToastProvider` everywhere (removed in Task 10). Every file that currently calls `useToast()` gets its calls converted as part of that same file's own task, not as one big cross-file sweep.
+- **Toast**: `sonner`'s `toast()` / `toast.error()` replaces `useToast()`/`ToastProvider` everywhere. `ToastProvider` is unmounted and `<Toaster />` mounted in Task 3; the `Toast.tsx`/`Toast.css` files themselves stay on disk (still imported by not-yet-converted consumers) until Task 23's cleanup pass deletes them, once every consumer below has converted. Every file that currently calls `useToast()` gets its calls converted as part of that same file's own task, not as one big cross-file sweep.
 - **Motion**: keep respecting `prefers-reduced-motion` (existing app-wide rule, `index.css`) — any new CSS/Tailwind animation (the sparkline's pulsing dot) must have a `motion-reduce:` override, since Tailwind's `animate-pulse` does not disable itself automatically.
 - **shadcn CLI config** (set in Task 2): style `new-york`, base color `neutral`, CSS variables enabled, no default color preset kept — Task 3 overwrites the generated tokens with the project's own amber/neutral palette.
-- **Every task deletes what it makes obsolete in the same commit** (the old scoped `.css` file's *contents* it replaces stay imported until Task 24, which does the final `rm` + import cleanup pass — don't delete a CSS file that's still imported by an unmigrated sibling).
+- **Every task deletes what it makes obsolete in the same commit** (the old scoped `.css` file's *contents* it replaces stay imported until Task 23, which does the final `rm` + import cleanup pass — don't delete a CSS file that's still imported by an unmigrated sibling).
 
 ---
 
@@ -392,7 +392,7 @@ export default function App() {
 }
 ```
 
-Note `ToastProvider` is removed here already (Task 10 deletes `Toast.tsx` itself and converts every remaining `useToast()` call site) — `<Toaster />` from `sonner` replaces it as the single mount point.
+Note `ToastProvider` is removed here already — `<Toaster />` from `sonner` replaces it as the single mount point. `Toast.tsx` itself stays on disk (still imported by every not-yet-converted consumer) until Task 23's cleanup pass deletes it, once each consumer (Tasks 12, 14, 15, 18, 19, 21) has converted its own `useToast()` calls to `sonner`'s `toast()`.
 
 - [ ] **Step 5: Verify both themes render**
 
@@ -411,7 +411,7 @@ git commit -m "feat: map tokens to shadcn CSS variables, add light mode via next
 
 **Files:**
 - Modify: `tankctl-web/src/components/AppShell.tsx`
-- Delete: `tankctl-web/src/components/AppShell.css` (import removed here; file itself removed in Task 24's sweep — leave it on disk unreferenced until then is fine, but removing the import now means removing the file now is safe too since nothing else imports `AppShell.css`)
+- Delete: `tankctl-web/src/components/AppShell.css` (import removed here; file itself removed in Task 23's sweep — leave it on disk unreferenced until then is fine, but removing the import now means removing the file now is safe too since nothing else imports `AppShell.css`)
 
 **Interfaces:**
 - Consumes: `StatusPill` (Task 5's rewritten version — same `{ tone, label }` props), `next-themes`' `useTheme`.
@@ -909,37 +909,7 @@ git commit -m "refactor: rebuild Tabs on Radix Tabs (shadcn)"
 
 ---
 
-### Task 10: Remove Toast.tsx, mount sonner Toaster
-
-**Files:**
-- Delete: `tankctl-web/src/components/Toast.tsx`
-- Delete: `tankctl-web/src/components/Toast.css`
-- Already modified in Task 3: `tankctl-web/src/App.tsx` (already mounts `<Toaster />`, already dropped `<ToastProvider>`)
-
-**Interfaces:**
-- Produces: `import { toast } from 'sonner'` is now the only way to raise a toast. Every remaining `import { useToast } from '.../Toast'` call site (WaterTab, Alerts, Settings, LightTab, RelaysTab — Tasks 15, 16, 19, 20, 22) is converted **in that file's own task**, not here. This task only removes the old provider/component so those later tasks have nothing to fall back to.
-
-- [ ] **Step 1: Delete Toast.tsx and Toast.css**
-
-```bash
-rm tankctl-web/src/components/Toast.tsx tankctl-web/src/components/Toast.css
-```
-
-- [ ] **Step 2: Confirm the build now fails exactly where expected**
-
-Run: `npm run build`
-Expected: TypeScript errors on every remaining `from '../components/Toast'` / `from '../../components/Toast'` import (in `WaterTab.tsx`, `Alerts.tsx`, `Settings.tsx`, `LightTab.tsx`, `RelaysTab.tsx`, `TankCard.tsx`). This is expected and intentional — each of those files converts its own calls in its own later task in this plan. Do not fix them here.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add -A tankctl-web/src/components/Toast.tsx tankctl-web/src/components/Toast.css
-git commit -m "chore: remove Toast.tsx/ToastProvider — sonner Toaster now mounted in App.tsx"
-```
-
----
-
-### Task 11: LineChart.tsx — Tailwind reskin + hover tooltip
+### Task 10: LineChart.tsx — Tailwind reskin + hover tooltip
 
 **Files:**
 - Modify: `tankctl-web/src/components/LineChart.tsx`
@@ -1189,7 +1159,7 @@ git commit -m "feat: reskin LineChart, add hover tooltip via shadcn Tooltip"
 
 ---
 
-### Task 12: Sparkline.tsx + useLiveSparkline — live data, dots, pulsing latest point
+### Task 11: Sparkline.tsx + useLiveSparkline — live data, dots, pulsing latest point
 
 **Files:**
 - Modify: `tankctl-web/src/components/Sparkline.tsx`
@@ -1198,7 +1168,7 @@ git commit -m "feat: reskin LineChart, add hover tooltip via shadcn Tooltip"
 
 **Interfaces:**
 - Consumes: `useSparkline` from `../api/telemetry` (existing, unchanged — the 60s-polled seed query), `useLiveEvent` from `../ws/LiveEventsProvider` (existing), `Tooltip` family from `../components/ui/tooltip`.
-- Produces: `useLiveSparkline(deviceId: string): SparklinePoint[]` (new hook, consumed by Task 13's `TankCard.tsx`). `Sparkline({ data: SparklineDatum[], color: string })` — **breaking change** from the old `{ values: number[], color }` API; Task 13 updates its only call site in the same migration pass.
+- Produces: `useLiveSparkline(deviceId: string): SparklinePoint[]` (new hook, consumed by Task 12's `TankCard.tsx`). `Sparkline({ data: SparklineDatum[], color: string })` — **breaking change** from the old `{ values: number[], color }` API; Task 12 updates its only call site in the same migration pass.
 
 - [ ] **Step 1: Create the live-tail hook**
 
@@ -1310,9 +1280,9 @@ export function Sparkline({ data, color }: { data: SparklineDatum[]; color: stri
 }
 ```
 
-- [ ] **Step 3: Verify in browser (partial — full check happens once Task 13 wires the new hook into TankCard)**
+- [ ] **Step 3: Verify in browser (partial — full check happens once Task 12 wires the new hook into TankCard)**
 
-Run: `npm run build`. Expected: `Sparkline.tsx` and `useLiveSparkline.ts` compile cleanly on their own; `TankCard.tsx` will show a type error against the old `{ values }` prop shape until Task 13 — that's expected here, don't fix it in this task.
+Run: `npm run build`. Expected: `Sparkline.tsx` and `useLiveSparkline.ts` compile cleanly on their own; `TankCard.tsx` will show a type error against the old `{ values }` prop shape until Task 12 — that's expected here, don't fix it in this task.
 
 - [ ] **Step 4: Commit**
 
@@ -1323,14 +1293,14 @@ git commit -m "feat: live-tail sparkline data hook, per-point markers, pulsing l
 
 ---
 
-### Task 13: TankCard.tsx — Card reskin + live sparkline + toast conversion
+### Task 12: TankCard.tsx — Card reskin + live sparkline + toast conversion
 
 **Files:**
 - Modify: `tankctl-web/src/components/TankCard.tsx`
 - Delete: `tankctl-web/src/components/TankCard.css`
 
 **Interfaces:**
-- Consumes: `useLiveSparkline` from `../features/overview/useLiveSparkline` (Task 12), `Sparkline` (new `{ data, color }` shape, Task 12), `toast` from `sonner`, `Button` from `./ui/button`, `Badge` for the alert-count pill.
+- Consumes: `useLiveSparkline` from `../features/overview/useLiveSparkline` (Task 11), `Sparkline` (new `{ data, color }` shape, Task 11), `toast` from `sonner`, `Button` from `./ui/button`, `Badge` for the alert-count pill.
 - Produces: same external API — `TankCard({ device, alertCount })`. `Overview.tsx` needs no changes.
 
 - [ ] **Step 1: Rewrite TankCard.tsx**
@@ -1418,14 +1388,14 @@ git commit -m "feat: wire TankCard to WS-live sparkline, reskin with Tailwind"
 
 ---
 
-### Task 14: Overview.tsx reskin
+### Task 13: Overview.tsx reskin
 
 **Files:**
 - Modify: `tankctl-web/src/routes/Overview.tsx`
 - Delete: `tankctl-web/src/routes/Overview.css`
 
 **Interfaces:**
-- Consumes: `SearchFilterBar` (Task 8), `EmptyState` (Task 6), `TankCard` (Task 13) — all unchanged call signatures.
+- Consumes: `SearchFilterBar` (Task 8), `EmptyState` (Task 6), `TankCard` (Task 12) — all unchanged call signatures.
 
 - [ ] **Step 1: Rewrite Overview.tsx (logic identical — only the grid wrapper className and page-title element change)**
 
@@ -1543,7 +1513,7 @@ git commit -m "refactor: reskin Overview grid with Tailwind"
 
 ---
 
-### Task 15: Alerts.tsx — human-friendly event labels + reskin
+### Task 14: Alerts.tsx — human-friendly event labels + reskin
 
 **Files:**
 - Create: `tankctl-web/src/lib/eventLabels.ts`
@@ -1714,7 +1684,7 @@ git commit -m "feat: human-friendly alert event labels, reskin Alerts with shadc
 
 ---
 
-### Task 16: Settings.tsx — react-hook-form register-device form + reskin
+### Task 15: Settings.tsx — react-hook-form register-device form + reskin
 
 **Files:**
 - Modify: `tankctl-web/src/routes/Settings.tsx`
@@ -1854,14 +1824,14 @@ git commit -m "feat: convert Settings register-device form to react-hook-form+zo
 
 ---
 
-### Task 17: TankDetail.tsx reskin
+### Task 16: TankDetail.tsx reskin
 
 **Files:**
 - Modify: `tankctl-web/src/routes/TankDetail.tsx`
 - Delete: `tankctl-web/src/routes/TankDetail.css`
 
 **Interfaces:**
-- Consumes: `StatusPill` (Task 5), `StatTile` (Task 7), `LineChart` (Task 11), `Tabs` (Task 9), `EmptyState` (Task 6), `Button` (range picker), unchanged `useTankTelemetry` hook.
+- Consumes: `StatusPill` (Task 5), `StatTile` (Task 7), `LineChart` (Task 10), `Tabs` (Task 9), `EmptyState` (Task 6), `Button` (range picker), unchanged `useTankTelemetry` hook.
 
 - [ ] **Step 1: Rewrite TankDetail.tsx**
 
@@ -2064,7 +2034,7 @@ git commit -m "refactor: reskin TankDetail with Tailwind"
 
 ---
 
-### Task 18: CommandsTab.tsx reskin
+### Task 17: CommandsTab.tsx reskin
 
 **Files:**
 - Modify: `tankctl-web/src/features/tank-detail/CommandsTab.tsx`
@@ -2146,7 +2116,7 @@ git commit -m "refactor: rebuild CommandsTab on shadcn Table/Badge"
 
 ---
 
-### Task 19: LightTab.tsx — react-hook-form + toast conversion + reskin
+### Task 18: LightTab.tsx — react-hook-form + toast conversion + reskin
 
 **Files:**
 - Modify: `tankctl-web/src/features/tank-detail/LightTab.tsx`
@@ -2298,7 +2268,7 @@ git commit -m "feat: convert LightTab schedule form to react-hook-form+zod, sonn
 
 ---
 
-### Task 20: RelaysTab.tsx — react-hook-form + toast conversion + reskin
+### Task 19: RelaysTab.tsx — react-hook-form + toast conversion + reskin
 
 **Files:**
 - Modify: `tankctl-web/src/features/tank-detail/RelaysTab.tsx`
@@ -2631,7 +2601,7 @@ git commit -m "feat: convert RelayForm to react-hook-form+zod, sonner toasts, re
 
 ---
 
-### Task 21: WaterScheduleForm.tsx — full react-hook-form + zod conversion
+### Task 20: WaterScheduleForm.tsx — full react-hook-form + zod conversion
 
 **Files:**
 - Modify: `tankctl-web/src/features/tank-detail/WaterScheduleForm.tsx`
@@ -2898,13 +2868,13 @@ git commit -m "feat: convert WaterScheduleForm to react-hook-form+zod"
 
 ---
 
-### Task 22: WaterTab.tsx — toast conversion + reskin
+### Task 21: WaterTab.tsx — toast conversion + reskin
 
 **Files:**
 - Modify: `tankctl-web/src/features/tank-detail/WaterTab.tsx`
 
 **Interfaces:**
-- Consumes: `WaterScheduleForm` (Task 21, unchanged props), `WaterHistoryCalendar` (Task 23 rewrites this — this task's own changes don't touch the calendar's internals, just how it's mounted), `Button`, `toast` from `sonner`.
+- Consumes: `WaterScheduleForm` (Task 20, unchanged props), `WaterHistoryCalendar` (Task 22 rewrites this — this task's own changes don't touch the calendar's internals, just how it's mounted), `Button`, `toast` from `sonner`.
 
 - [ ] **Step 1: Rewrite WaterTab.tsx**
 
@@ -3097,7 +3067,7 @@ git commit -m "refactor: reskin WaterTab, convert to sonner toasts"
 
 ---
 
-### Task 23: WaterHistoryCalendar.tsx — rebuild on shadcn Calendar with logged + scheduled markers
+### Task 22: WaterHistoryCalendar.tsx — rebuild on shadcn Calendar with logged + scheduled markers
 
 **Files:**
 - Modify: `tankctl-web/src/features/tank-detail/WaterHistoryCalendar.tsx`
@@ -3260,24 +3230,29 @@ git commit -m "feat: rebuild water history calendar on shadcn Calendar with logg
 
 ---
 
-### Task 24: Cleanup — delete remaining unused CSS, verify no dangling imports
+### Task 23: Cleanup — delete remaining unused CSS + Toast.tsx, verify no dangling imports
 
 **Files:**
 - Delete: `tankctl-web/src/features/tank-detail/tab-panels.css`
 - Delete: `tankctl-web/src/styles/ui.css`
+- Delete: `tankctl-web/src/components/Toast.tsx`
+- Delete: `tankctl-web/src/components/Toast.css`
 - Modify: `tankctl-web/src/index.css` (remove the `@import './styles/ui.css';` line)
 
 **Interfaces:**
-- None — this is pure removal, no new code.
+- None — this is pure removal, no new code. By this point every `useToast()` consumer (Tasks 12, 14, 15, 18, 19, 21) has already converted to `sonner`'s `toast()`, so `Toast.tsx` has no remaining importers.
 
-- [ ] **Step 1: Search for any remaining `.css` imports outside index.css/tokens.css**
+- [ ] **Step 1: Search for any remaining `.css` imports outside index.css/tokens.css, and any remaining Toast.tsx imports**
 
 Run: `grep -rn "\.css'" tankctl-web/src --include=*.tsx --include=*.ts`
-Expected: no results (every component-level `.css` import should already be gone from Tasks 4–23; `tab-panels.css` and `ui.css` are the last two, imported nowhere by this point except `index.css`'s `ui.css` line).
+Expected: no results (every component-level `.css` import should already be gone from Tasks 4–22; `tab-panels.css` and `ui.css` are the last two, imported nowhere by this point except `index.css`'s `ui.css` line).
 
-If the grep finds anything else, that file was missed in an earlier task — go back and finish that task's reskin rather than deleting the CSS file out from under it.
+Run: `grep -rln "from '.*/Toast'" tankctl-web/src --include=*.tsx --include=*.ts`
+Expected: no results — every consumer listed above converted in its own task.
 
-- [ ] **Step 2: Remove the ui.css import and delete both remaining CSS files**
+If either grep finds anything, that file was missed in an earlier task — go back and finish that task's conversion rather than deleting the file out from under it.
+
+- [ ] **Step 2: Remove the ui.css import and delete the four remaining files**
 
 `tankctl-web/src/index.css` — remove this line:
 
@@ -3286,26 +3261,26 @@ If the grep finds anything else, that file was missed in an earlier task — go 
 ```
 
 ```bash
-rm tankctl-web/src/features/tank-detail/tab-panels.css tankctl-web/src/styles/ui.css
+rm tankctl-web/src/features/tank-detail/tab-panels.css tankctl-web/src/styles/ui.css tankctl-web/src/components/Toast.tsx tankctl-web/src/components/Toast.css
 ```
 
 - [ ] **Step 3: Full build + smoke check**
 
 Run: `npm run build` (from `tankctl-web/`)
 Expected: clean build, no missing-module errors, no unused-import lint errors (`npm run lint`).
-Run: `npm run dev`, click through every route once — Overview, a Tank Detail (all four tabs), Alerts, Settings — confirm nothing renders unstyled (a plain unstyled block usually means a missed class name from a deleted CSS file).
+Run: `npm run dev`, click through every route once — Overview, a Tank Detail (all four tabs), Alerts, Settings — confirm nothing renders unstyled (a plain unstyled block usually means a missed class name from a deleted CSS file), and trigger at least one toast (e.g. Settings' register-device error path) to confirm sonner still fires correctly with no `Toast.tsx` left in the tree.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add tankctl-web/src/index.css
-git rm tankctl-web/src/features/tank-detail/tab-panels.css tankctl-web/src/styles/ui.css
-git commit -m "chore: remove remaining pre-shadcn CSS files"
+git rm tankctl-web/src/features/tank-detail/tab-panels.css tankctl-web/src/styles/ui.css tankctl-web/src/components/Toast.tsx tankctl-web/src/components/Toast.css
+git commit -m "chore: remove remaining pre-shadcn CSS files and now-unused Toast.tsx"
 ```
 
 ---
 
-### Task 25: Update docs/ui/01_spec.md
+### Task 24: Update docs/ui/01_spec.md
 
 **Files:**
 - Modify: `docs/ui/01_spec.md`
@@ -3340,7 +3315,7 @@ git commit -m "docs: record shadcn/ui + light-mode migration in 01_spec.md"
 
 ---
 
-### Task 26: Manual QA pass
+### Task 25: Manual QA pass
 
 **Files:** none (verification-only task; fixes for anything found go into the file(s) they belong to, then get their own small commit — this task doesn't pre-declare which files that will be).
 
