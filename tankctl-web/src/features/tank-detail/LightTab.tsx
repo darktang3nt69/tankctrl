@@ -1,9 +1,19 @@
-import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { toast } from 'sonner'
 import type { LightSchedule } from '../../api/types'
 import { useSetLight } from '../../api/commands'
 import { useSaveLightSchedule, useDeleteLightSchedule } from '../../api/lightSchedule'
-import { useToast } from '../../components/Toast'
-import './tab-panels.css'
+import { Button } from '../../components/ui/button'
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '../../components/ui/form'
+import { Input } from '../../components/ui/input'
+
+const lightScheduleSchema = z.object({
+  on_time: z.string().min(1, 'On time is required'),
+  off_time: z.string().min(1, 'Off time is required'),
+  enabled: z.boolean(),
+})
 
 /** Mounted with `key={deviceId}` by TankDetail, so switching tanks remounts
  * this component fresh rather than needing an effect to resync form state. */
@@ -11,78 +21,105 @@ export function LightTab({ deviceId, lightSchedule }: { deviceId: string; lightS
   const setLight = useSetLight(deviceId)
   const saveSchedule = useSaveLightSchedule(deviceId)
   const deleteSchedule = useDeleteLightSchedule(deviceId)
-  const toast = useToast()
 
-  const [onTime, setOnTime] = useState(lightSchedule?.on_time ?? '06:00')
-  const [offTime, setOffTime] = useState(lightSchedule?.off_time ?? '18:00')
-  const [enabled, setEnabled] = useState(lightSchedule?.enabled ?? true)
+  const form = useForm<z.infer<typeof lightScheduleSchema>>({
+    resolver: zodResolver(lightScheduleSchema),
+    defaultValues: {
+      on_time: lightSchedule?.on_time ?? '06:00',
+      off_time: lightSchedule?.off_time ?? '18:00',
+      enabled: lightSchedule?.enabled ?? true,
+    },
+  })
 
   function handleSetLight(state: 'on' | 'off') {
     setLight.mutate(state, {
-      onSuccess: () => toast.show(`Light turned ${state}`),
-      onError: () => toast.show('Failed to set light', 'danger'),
+      onSuccess: () => toast.success(`Light turned ${state}`),
+      onError: () => toast.error('Failed to set light'),
     })
   }
 
-  function handleSaveSchedule(e: React.FormEvent) {
-    e.preventDefault()
-    saveSchedule.mutate(
-      { on_time: onTime, off_time: offTime, enabled },
-      {
-        onSuccess: () => toast.show('Light schedule saved'),
-        onError: () => toast.show('Failed to save schedule', 'danger'),
-      },
-    )
+  function onSubmit(values: z.infer<typeof lightScheduleSchema>) {
+    saveSchedule.mutate(values, {
+      onSuccess: () => toast.success('Light schedule saved'),
+      onError: () => toast.error('Failed to save schedule'),
+    })
   }
 
   function handleDeleteSchedule() {
     deleteSchedule.mutate(undefined, {
-      onSuccess: () => toast.show('Light schedule deleted'),
-      onError: () => toast.show('Failed to delete schedule', 'danger'),
+      onSuccess: () => toast.success('Light schedule deleted'),
+      onError: () => toast.error('Failed to delete schedule'),
     })
   }
 
   return (
-    <div>
-      <section className="card tab-section">
-        <h3 className="tab-section__title">Manual override</h3>
-        <div className="tab-section__actions">
-          <button type="button" className="btn btn--primary" onClick={() => handleSetLight('on')} disabled={setLight.isPending}>
+    <div className="space-y-4">
+      <section className="rounded-lg border bg-card p-5">
+        <h3 className="mb-3 font-semibold">Manual override</h3>
+        <div className="flex gap-2">
+          <Button type="button" onClick={() => handleSetLight('on')} disabled={setLight.isPending}>
             Turn on
-          </button>
-          <button type="button" className="btn" onClick={() => handleSetLight('off')} disabled={setLight.isPending}>
+          </Button>
+          <Button type="button" variant="outline" onClick={() => handleSetLight('off')} disabled={setLight.isPending}>
             Turn off
-          </button>
+          </Button>
         </div>
       </section>
 
-      <section className="card tab-section">
-        <h3 className="tab-section__title">Schedule</h3>
-        <form onSubmit={handleSaveSchedule}>
-          <div className="field">
-            <label htmlFor="on-time">On time</label>
-            <input id="on-time" type="time" value={onTime} onChange={(e) => setOnTime(e.target.value)} required />
-          </div>
-          <div className="field">
-            <label htmlFor="off-time">Off time</label>
-            <input id="off-time" type="time" value={offTime} onChange={(e) => setOffTime(e.target.value)} required />
-          </div>
-          <div className="field">
-            <label>
-              <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
-            </label>
-          </div>
-          <div className="tab-section__actions">
-            <button type="submit" className="btn btn--primary" disabled={saveSchedule.isPending}>
-              Save schedule
-            </button>
-            {lightSchedule && (
-              <button type="button" className="btn btn--danger" onClick={handleDeleteSchedule} disabled={deleteSchedule.isPending}>
-                Delete schedule
-              </button>
-            )}
-          </div>
-        </form>
+      <section className="rounded-lg border bg-card p-5">
+        <h3 className="mb-4 font-semibold">Schedule</h3>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="on_time"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>On time</FormLabel>
+                  <FormControl>
+                    <Input type="time" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="off_time"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Off time</FormLabel>
+                  <FormControl>
+                    <Input type="time" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="enabled"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                  <FormControl>
+                    <input type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} className="h-4 w-4" />
+                  </FormControl>
+                  <FormLabel className="!mt-0">Enabled</FormLabel>
+                </FormItem>
+              )}
+            />
+            <div className="flex gap-2">
+              <Button type="submit" disabled={saveSchedule.isPending}>
+                Save schedule
+              </Button>
+              {lightSchedule && (
+                <Button type="button" variant="destructive" onClick={handleDeleteSchedule} disabled={deleteSchedule.isPending}>
+                  Delete schedule
+                </Button>
+              )}
+            </div>
+          </form>
+        </Form>
       </section>
     </div>
   )
