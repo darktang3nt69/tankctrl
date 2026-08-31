@@ -1,12 +1,12 @@
 import { useState } from 'react'
+import { toast } from 'sonner'
 import type { WaterSchedule, WaterScheduleWrite } from '../../api/types'
 import { useCreateWaterSchedule, useDeleteWaterSchedule, useUpdateWaterSchedule, useWaterSchedules } from '../../api/waterSchedules'
 import { WaterScheduleForm } from './WaterScheduleForm'
 import { WaterHistoryCalendar } from './WaterHistoryCalendar'
-import { useToast } from '../../components/Toast'
 import { EmptyState } from '../../components/EmptyState'
+import { Button } from '../../components/ui/button'
 import { toLocalDateKey } from '../../lib/date'
-import './tab-panels.css'
 
 const BLANK: WaterScheduleWrite = {
   schedule_type: 'weekly',
@@ -44,7 +44,6 @@ export function WaterTab({ deviceId }: { deviceId: string }) {
   const createSchedule = useCreateWaterSchedule(deviceId)
   const updateSchedule = useUpdateWaterSchedule(deviceId)
   const deleteSchedule = useDeleteWaterSchedule(deviceId)
-  const toast = useToast()
 
   const [mode, setMode] = useState<'none' | 'add' | 'log-now' | number>('none')
 
@@ -52,7 +51,7 @@ export function WaterTab({ deviceId }: { deviceId: string }) {
     setMode('none')
   }
 
-  if (isLoading) return <p>Loading water schedules…</p>
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading water schedules…</p>
 
   const logNowDefaults: WaterScheduleWrite = {
     ...BLANK,
@@ -64,14 +63,14 @@ export function WaterTab({ deviceId }: { deviceId: string }) {
   }
 
   return (
-    <div>
-      <div className="tab-section__actions tab-section__actions--spaced">
-        <button type="button" className="btn btn--primary" onClick={() => setMode('add')}>
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <Button type="button" onClick={() => setMode('add')}>
           Add schedule
-        </button>
-        <button type="button" className="btn" onClick={() => setMode('log-now')}>
+        </Button>
+        <Button type="button" variant="outline" onClick={() => setMode('log-now')}>
           Log a change now
-        </button>
+        </Button>
       </div>
 
       {mode === 'add' && (
@@ -82,10 +81,10 @@ export function WaterTab({ deviceId }: { deviceId: string }) {
           onSubmit={(body) =>
             createSchedule.mutate(body, {
               onSuccess: () => {
-                toast.show('Water schedule created')
+                toast.success('Water schedule created')
                 closeForm()
               },
-              onError: () => toast.show('Failed to create schedule', 'danger'),
+              onError: () => toast.error('Failed to create schedule'),
             })
           }
         />
@@ -99,10 +98,10 @@ export function WaterTab({ deviceId }: { deviceId: string }) {
           onSubmit={(body) =>
             createSchedule.mutate(body, {
               onSuccess: () => {
-                toast.show('Water change logged')
+                toast.success('Water change logged')
                 closeForm()
               },
-              onError: () => toast.show('Failed to log water change', 'danger'),
+              onError: () => toast.error('Failed to log water change'),
             })
           }
         />
@@ -111,51 +110,53 @@ export function WaterTab({ deviceId }: { deviceId: string }) {
       {!schedules || schedules.length === 0 ? (
         <EmptyState title="No water schedules yet" description="Add a recurring schedule or log a change that just happened." />
       ) : (
-        <div className="card tab-section-list">
+        <div className="divide-y rounded-lg border bg-card">
           {schedules.map((s) =>
             mode === s.id ? (
-              <WaterScheduleForm
-                key={s.id}
-                initial={toWrite(s)}
-                submitting={updateSchedule.isPending}
-                onCancel={closeForm}
-                onSubmit={(body) =>
-                  updateSchedule.mutate(
-                    { scheduleId: s.id, body },
-                    {
-                      onSuccess: () => {
-                        toast.show('Water schedule updated')
-                        closeForm()
+              <div key={s.id} className="p-4">
+                <WaterScheduleForm
+                  initial={toWrite(s)}
+                  submitting={updateSchedule.isPending}
+                  onCancel={closeForm}
+                  onSubmit={(body) =>
+                    updateSchedule.mutate(
+                      { scheduleId: s.id, body },
+                      {
+                        onSuccess: () => {
+                          toast.success('Water schedule updated')
+                          closeForm()
+                        },
+                        onError: () => toast.error('Failed to update schedule'),
                       },
-                      onError: () => toast.show('Failed to update schedule', 'danger'),
-                    },
-                  )
-                }
-              />
+                    )
+                  }
+                />
+              </div>
             ) : (
-              <div key={s.id} className="tab-section__row">
-                <div className="tab-section__row-main">
-                  <span className="tab-section__row-title">{cadenceLabel(s)}</span>
-                  <span className="tab-section__row-meta mono">
+              <div key={s.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium">{cadenceLabel(s)}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
                     {s.schedule_time} · {s.completed ? 'completed' : s.enabled ? 'active' : 'disabled'}
                   </span>
                 </div>
-                <div className="tab-section__actions">
-                  <button type="button" className="btn" onClick={() => setMode(s.id)}>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setMode(s.id)}>
                     {s.completed ? 'Edit' : 'Mark complete / edit'}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="btn btn--danger"
+                    variant="destructive"
+                    size="sm"
                     onClick={() =>
                       deleteSchedule.mutate(s.id, {
-                        onSuccess: () => toast.show('Schedule deleted'),
-                        onError: () => toast.show('Failed to delete schedule', 'danger'),
+                        onSuccess: () => toast.success('Schedule deleted'),
+                        onError: () => toast.error('Failed to delete schedule'),
                       })
                     }
                   >
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             ),
@@ -163,8 +164,8 @@ export function WaterTab({ deviceId }: { deviceId: string }) {
         </div>
       )}
 
-      <div className="card">
-        <h3 className="tab-section__title tab-section-list__title">History</h3>
+      <div className="rounded-lg border bg-card p-5">
+        <h3 className="mb-3 font-semibold">History</h3>
         <WaterHistoryCalendar schedules={schedules ?? []} />
       </div>
     </div>
