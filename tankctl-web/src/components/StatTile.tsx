@@ -1,11 +1,8 @@
 import { useEffect, useState } from 'react'
 import { motion, useMotionValue, useMotionValueEvent, useSpring } from 'motion/react'
-import './StatTile.css'
 
 const NUMERIC = /^-?\d+(\.\d+)?$/
 
-/** Springs toward a new numeric value instead of snapping — passes non-numeric
- * strings (times, "—") through untouched rather than trying to animate them. */
 function AnimatedValue({ value }: { value: string }) {
   const trimmed = value.trim()
   const isNumeric = NUMERIC.test(trimmed)
@@ -40,13 +37,13 @@ export function StatTile({
   delta?: string
 }) {
   return (
-    <motion.div className="stat-tile" layout>
-      <div className="stat-tile__label">{label}</div>
-      <div className="stat-tile__value mono">
+    <motion.div className="rounded-lg border bg-card p-4" layout>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">
         <AnimatedValue value={value} />
-        {unit && <span className="stat-tile__unit">{unit}</span>}
+        {unit && <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>}
       </div>
-      {delta && <div className="stat-tile__delta mono">{delta}</div>}
+      {delta && <div className="mt-1 font-mono text-xs text-muted-foreground">{delta}</div>}
     </motion.div>
   )
 }
