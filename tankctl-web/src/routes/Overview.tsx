@@ -5,7 +5,6 @@ import { useEvents } from '../api/events'
 import { TankCard } from '../components/TankCard'
 import { SearchFilterBar, type SortKey, type StatusFilter } from '../components/SearchFilterBar'
 import { EmptyState } from '../components/EmptyState'
-import './Overview.css'
 
 export function Overview() {
   const { data: devices, isLoading, isError } = useDevices()
@@ -46,21 +45,16 @@ export function Overview() {
     return sorted
   }, [devices, search, statusFilter, sortKey])
 
-  if (isLoading) return <p>Loading tanks…</p>
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading tanks…</p>
   if (isError) return <EmptyState title="Couldn't load tanks" description="Check that the backend is reachable, then try again." />
 
   if (!devices || devices.length === 0) {
-    return (
-      <EmptyState
-        title="No tanks registered yet"
-        description="Register a device in Settings to see it here."
-      />
-    )
+    return <EmptyState title="No tanks registered yet" description="Register a device in Settings to see it here." />
   }
 
   return (
     <div>
-      <h1 className="page-title">Tanks</h1>
+      <h1 className="mb-5 text-2xl font-bold tracking-tight">Tanks</h1>
       <SearchFilterBar
         search={search}
         onSearchChange={setSearch}
@@ -73,7 +67,7 @@ export function Overview() {
         <EmptyState title="No tanks match your search" description="Try a different search term or filter." />
       ) : (
         <motion.div
-          className="overview__grid"
+          className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4"
           initial="hidden"
           animate="show"
           variants={{ show: { transition: { staggerChildren: 0.035 } } }}
