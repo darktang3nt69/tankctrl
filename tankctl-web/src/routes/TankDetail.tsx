@@ -6,6 +6,7 @@ import { StatTile } from '../components/StatTile'
 import { LineChart } from '../components/LineChart'
 import { Tabs } from '../components/Tabs'
 import { EmptyState } from '../components/EmptyState'
+import { Button } from '../components/ui/button'
 import { useTankTelemetry } from '../features/tank-detail/useTankTelemetry'
 import type { ChartRange } from '../api/telemetry'
 import { LightTab } from '../features/tank-detail/LightTab'
@@ -13,7 +14,6 @@ import { RelaysTab } from '../features/tank-detail/RelaysTab'
 import { WaterTab } from '../features/tank-detail/WaterTab'
 import { CommandsTab } from '../features/tank-detail/CommandsTab'
 import { IconCommands, IconLight, IconRelay, IconWater } from '../components/icons'
-import './TankDetail.css'
 
 const TABS = [
   { id: 'light', label: 'Light', Icon: IconLight },
@@ -64,16 +64,16 @@ export function TankDetail() {
   }
 
   if (!deviceId) return null
-  if (isLoading) return <p>Loading tank…</p>
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading tank…</p>
   if (isError || !device) {
     return (
       <EmptyState
         title="Tank not found"
         description={`No device with id "${deviceId}".`}
         action={
-          <Link to="/" className="btn">
-            Back to Overview
-          </Link>
+          <Button asChild variant="outline">
+            <Link to="/">Back to Overview</Link>
+          </Button>
         }
       />
     )
@@ -84,21 +84,21 @@ export function TankDetail() {
 
   return (
     <div>
-      <div className="hud-frame tank-detail__frame">
-        <header className="tank-detail__header">
+      <div className="hud-frame mb-4 rounded-lg border bg-card">
+        <header className="flex items-start justify-between gap-4">
           <div>
-            <Link to="/" className="tank-detail__back">
+            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
               ← Overview
             </Link>
-            <h1>{device.device_name ?? device.device_id}</h1>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight">{device.device_name ?? device.device_id}</h1>
           </div>
-          <div className="tank-detail__header-meta">
-            {relativeLastSeen && <span className="tank-detail__updated mono">Updated {relativeLastSeen}</span>}
+          <div className="flex items-center gap-3">
+            {relativeLastSeen && <span className="font-mono text-xs text-muted-foreground">Updated {relativeLastSeen}</span>}
             <StatusPill tone={statusTone(device.status)} />
           </div>
         </header>
 
-        <div className="tank-detail__stats">
+        <div className="mt-4 grid grid-cols-3 gap-3">
           <StatTile label="Water temperature" value={lastTemp ? lastTemp.value.toFixed(1) : '—'} unit="°C" />
           <StatTile label="Humidity" value={lastHumidity ? lastHumidity.value.toFixed(1) : '—'} unit="%" />
           <StatTile label="Last seen" value={device.last_seen ? new Date(device.last_seen).toLocaleTimeString() : '—'} />
@@ -106,31 +106,30 @@ export function TankDetail() {
       </div>
 
       {telemetry.stale && range === 'live' && (
-        <div className="tank-detail__stale-banner" role="status">
+        <div role="status" className="mb-4 rounded-md border border-[var(--warn)] bg-[var(--warn-fill)] px-3 py-2 text-sm">
           Live feed degraded — showing last known reading and polling every 15s.
         </div>
       )}
 
-      <div className="tank-detail__range-row">
-        <div className="tank-detail__range-picker" role="group" aria-label="Time range">
-          {(['live', '7d', '30d'] as ChartRange[]).map((r) => (
-            <button
-              key={r}
-              type="button"
-              className="tank-detail__range-btn"
-              aria-pressed={range === r}
-              onClick={() => setRange(r)}
-            >
-              {r === 'live' ? 'Live' : r}
-            </button>
-          ))}
-        </div>
+      <div className="mb-4 flex gap-1 rounded-md border bg-muted p-1" role="group" aria-label="Time range">
+        {(['live', '7d', '30d'] as ChartRange[]).map((r) => (
+          <Button
+            key={r}
+            type="button"
+            variant={range === r ? 'default' : 'ghost'}
+            size="sm"
+            aria-pressed={range === r}
+            onClick={() => setRange(r)}
+          >
+            {r === 'live' ? 'Live' : r}
+          </Button>
+        ))}
       </div>
 
-      <div className="card tank-detail__chart-block">
-        <h3 className="tank-detail__chart-title">Water temperature</h3>
+      <div className="mb-4 rounded-lg border bg-card p-4">
+        <h3 className="mb-3 text-sm font-semibold">Water temperature</h3>
         {telemetry.isLoading ? (
-          <p>Loading chart…</p>
+          <p className="text-sm text-muted-foreground">Loading chart…</p>
         ) : (
           <LineChart
             data={telemetry.temp}
@@ -144,10 +143,10 @@ export function TankDetail() {
         )}
       </div>
 
-      <div className="card tank-detail__chart-block">
-        <h3 className="tank-detail__chart-title">Humidity</h3>
+      <div className="mb-4 rounded-lg border bg-card p-4">
+        <h3 className="mb-3 text-sm font-semibold">Humidity</h3>
         {telemetry.isLoading ? (
-          <p>Loading chart…</p>
+          <p className="text-sm text-muted-foreground">Loading chart…</p>
         ) : (
           <LineChart
             data={telemetry.humidity}
@@ -161,9 +160,9 @@ export function TankDetail() {
         )}
       </div>
 
-      <div className="tank-detail__tabs-block">
+      <div>
         <Tabs tabs={TABS} activeId={activeTab} onChange={handleTabChange} />
-        <div className="tank-detail__tab-panel">
+        <div className="mt-4">
           {activeTab === 'light' && <LightTab key={deviceId} deviceId={deviceId} lightSchedule={device.light_schedule} />}
           {activeTab === 'relays' && <RelaysTab key={deviceId} deviceId={deviceId} />}
           {activeTab === 'water' && <WaterTab key={deviceId} deviceId={deviceId} />}
