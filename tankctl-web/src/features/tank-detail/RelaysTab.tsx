@@ -1,10 +1,27 @@
 import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { toast } from 'sonner'
 import type { RelayConfig, RelayConfigWrite } from '../../api/types'
 import { useCreateRelay, useDeleteRelay, usePushRelayConfig, useRelays, useUpdateRelay } from '../../api/relays'
 import { useSetDesiredState, useShadow } from '../../api/shadow'
-import { useToast } from '../../components/Toast'
 import { EmptyState } from '../../components/EmptyState'
-import './tab-panels.css'
+import { Button } from '../../components/ui/button'
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '../../components/ui/form'
+import { Input } from '../../components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
+
+const relaySchema = z.object({
+  relay_name: z.string().min(1, 'Relay name is required'),
+  gpio_pin: z.coerce.number().int().min(0).max(39),
+  active_level: z.enum(['LOW', 'HIGH']),
+  default_state: z.enum(['on', 'off']),
+  fail_safe_default: z.enum(['on', 'off']),
+  cutoff_ceiling_seconds: z.coerce.number().int().positive().nullable(),
+})
+
+type RelayFormValues = z.infer<typeof relaySchema>
 
 const EMPTY_FORM: RelayConfigWrite = {
   relay_name: '',
@@ -28,93 +45,132 @@ function RelayForm({
   onCancel: () => void
   submitting: boolean
 }) {
-  const [form, setForm] = useState(initial)
+  const form = useForm<RelayFormValues>({
+    resolver: zodResolver(relaySchema),
+    defaultValues: initial,
+  })
 
   return (
-    <form
-      className="tab-section tab-section--muted"
-      onSubmit={(e) => {
-        e.preventDefault()
-        onSubmit(form)
-      }}
-    >
-      <div className="field">
-        <label htmlFor="relay-name">Relay name</label>
-        <input
-          id="relay-name"
-          value={form.relay_name}
-          disabled={lockName}
-          onChange={(e) => setForm((f) => ({ ...f, relay_name: e.target.value }))}
-          required
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 rounded-lg border bg-muted/40 p-5">
+        <FormField
+          control={form.control}
+          name="relay_name"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Relay name</FormLabel>
+              <FormControl>
+                <Input {...field} disabled={lockName} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
         />
-      </div>
-      <div className="field">
-        <label htmlFor="relay-gpio">GPIO pin</label>
-        <input
-          id="relay-gpio"
-          type="number"
-          min={0}
-          max={39}
-          value={form.gpio_pin}
-          onChange={(e) => setForm((f) => ({ ...f, gpio_pin: Number(e.target.value) }))}
-          required
+        <FormField
+          control={form.control}
+          name="gpio_pin"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>GPIO pin</FormLabel>
+              <FormControl>
+                <Input type="number" min={0} max={39} {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
         />
-      </div>
-      <div className="field">
-        <label htmlFor="relay-active-level">Active level</label>
-        <select
-          id="relay-active-level"
-          value={form.active_level}
-          onChange={(e) => setForm((f) => ({ ...f, active_level: e.target.value as 'LOW' | 'HIGH' }))}
-        >
-          <option value="LOW">LOW</option>
-          <option value="HIGH">HIGH</option>
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor="relay-default-state">Default state (on boot)</label>
-        <select
-          id="relay-default-state"
-          value={form.default_state}
-          onChange={(e) => setForm((f) => ({ ...f, default_state: e.target.value as 'on' | 'off' }))}
-        >
-          <option value="off">off</option>
-          <option value="on">on</option>
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor="relay-fail-safe">Fail-safe default</label>
-        <select
-          id="relay-fail-safe"
-          value={form.fail_safe_default}
-          onChange={(e) => setForm((f) => ({ ...f, fail_safe_default: e.target.value as 'on' | 'off' }))}
-        >
-          <option value="off">off</option>
-          <option value="on">on</option>
-        </select>
-        <span className="field__hint">State forced when the device can't trust its network/time.</span>
-      </div>
-      <div className="field">
-        <label htmlFor="relay-cutoff">Cutoff ceiling (seconds, blank = no ceiling)</label>
-        <input
-          id="relay-cutoff"
-          type="number"
-          min={1}
-          value={form.cutoff_ceiling_seconds ?? ''}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, cutoff_ceiling_seconds: e.target.value === '' ? null : Number(e.target.value) }))
-          }
+        <FormField
+          control={form.control}
+          name="active_level"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Active level</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="LOW">LOW</SelectItem>
+                  <SelectItem value="HIGH">HIGH</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
         />
-      </div>
-      <div className="tab-section__actions">
-        <button type="submit" className="btn btn--primary" disabled={submitting}>
-          Save relay
-        </button>
-        <button type="button" className="btn" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </form>
+        <FormField
+          control={form.control}
+          name="default_state"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Default state (on boot)</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="off">off</SelectItem>
+                  <SelectItem value="on">on</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="fail_safe_default"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Fail-safe default</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="off">off</SelectItem>
+                  <SelectItem value="on">on</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormDescription>State forced when the device can't trust its network/time.</FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="cutoff_ceiling_seconds"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Cutoff ceiling (seconds, blank = no ceiling)</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  min={1}
+                  value={field.value ?? ''}
+                  onChange={(e) => field.onChange(e.target.value === '' ? null : Number(e.target.value))}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <div className="flex gap-2">
+          <Button type="submit" disabled={submitting}>
+            Save relay
+          </Button>
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </form>
+    </Form>
   )
 }
 
@@ -126,7 +182,6 @@ export function RelaysTab({ deviceId }: { deviceId: string }) {
   const deleteRelay = useDeleteRelay(deviceId)
   const pushConfig = usePushRelayConfig(deviceId)
   const setDesired = useSetDesiredState(deviceId)
-  const toast = useToast()
 
   const [adding, setAdding] = useState(false)
   const [editingName, setEditingName] = useState<string | null>(null)
@@ -137,33 +192,33 @@ export function RelaysTab({ deviceId }: { deviceId: string }) {
     setDesired.mutate(
       { [name]: state },
       {
-        onSuccess: () => toast.show(`${name} set to ${state}`),
-        onError: () => toast.show(`Failed to set ${name}`, 'danger'),
+        onSuccess: () => toast.success(`${name} set to ${state}`),
+        onError: () => toast.error(`Failed to set ${name}`),
       },
     )
   }
 
-  if (isLoading) return <p>Loading relays…</p>
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading relays…</p>
 
   return (
-    <div>
-      <div className="tab-section__actions tab-section__actions--spaced">
-        <button type="button" className="btn btn--primary" onClick={() => setAdding(true)}>
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <Button type="button" onClick={() => setAdding(true)}>
           Add relay
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className="btn"
+          variant="outline"
           disabled={pushConfig.isPending}
           onClick={() =>
             pushConfig.mutate(undefined, {
-              onSuccess: () => toast.show('Relay config pushed to device'),
-              onError: () => toast.show('Failed to push config', 'danger'),
+              onSuccess: () => toast.success('Relay config pushed to device'),
+              onError: () => toast.error('Failed to push config'),
             })
           }
         >
           Push config to device
-        </button>
+        </Button>
       </div>
 
       {adding && (
@@ -175,10 +230,10 @@ export function RelaysTab({ deviceId }: { deviceId: string }) {
           onSubmit={(body) =>
             createRelay.mutate(body, {
               onSuccess: () => {
-                toast.show('Relay created')
+                toast.success('Relay created')
                 setAdding(false)
               },
-              onError: () => toast.show('Failed to create relay', 'danger'),
+              onError: () => toast.error('Failed to create relay'),
             })
           }
         />
@@ -187,58 +242,60 @@ export function RelaysTab({ deviceId }: { deviceId: string }) {
       {relays.length === 0 && !adding ? (
         <EmptyState title="No relays configured" description="Add a relay to control it from here." />
       ) : (
-        <div className="card">
+        <div className="divide-y rounded-lg border bg-card">
           {relays.map(([name, relay]) =>
             editingName === name ? (
-              <RelayForm
-                key={name}
-                initial={{ ...relay, relay_name: name }}
-                lockName
-                submitting={updateRelay.isPending}
-                onCancel={() => setEditingName(null)}
-                onSubmit={(body) =>
-                  updateRelay.mutate(
-                    { relayName: name, body },
-                    {
-                      onSuccess: () => {
-                        toast.show('Relay updated')
-                        setEditingName(null)
+              <div key={name} className="p-4">
+                <RelayForm
+                  initial={{ ...relay, relay_name: name }}
+                  lockName
+                  submitting={updateRelay.isPending}
+                  onCancel={() => setEditingName(null)}
+                  onSubmit={(body) =>
+                    updateRelay.mutate(
+                      { relayName: name, body },
+                      {
+                        onSuccess: () => {
+                          toast.success('Relay updated')
+                          setEditingName(null)
+                        },
+                        onError: () => toast.error('Failed to update relay'),
                       },
-                      onError: () => toast.show('Failed to update relay', 'danger'),
-                    },
-                  )
-                }
-              />
+                    )
+                  }
+                />
+              </div>
             ) : (
-              <div key={name} className="tab-section__row">
-                <div className="tab-section__row-main">
-                  <span className="tab-section__row-title">{name}</span>
-                  <span className="tab-section__row-meta mono">
+              <div key={name} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium">{name}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
                     GPIO {relay.gpio_pin} · reported: {shadow?.reported[name] ?? 'unknown'}
                   </span>
                 </div>
-                <div className="tab-section__actions">
-                  <button type="button" className="btn" onClick={() => toggleRelay(name, 'on')} disabled={setDesired.isPending}>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => toggleRelay(name, 'on')} disabled={setDesired.isPending}>
                     On
-                  </button>
-                  <button type="button" className="btn" onClick={() => toggleRelay(name, 'off')} disabled={setDesired.isPending}>
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => toggleRelay(name, 'off')} disabled={setDesired.isPending}>
                     Off
-                  </button>
-                  <button type="button" className="btn" onClick={() => setEditingName(name)}>
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setEditingName(name)}>
                     Edit
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    className="btn btn--danger"
+                    variant="destructive"
+                    size="sm"
                     onClick={() =>
                       deleteRelay.mutate(name, {
-                        onSuccess: () => toast.show('Relay deleted'),
-                        onError: () => toast.show('Failed to delete relay', 'danger'),
+                        onSuccess: () => toast.success('Relay deleted'),
+                        onError: () => toast.error('Failed to delete relay'),
                       })
                     }
                   >
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             ),
