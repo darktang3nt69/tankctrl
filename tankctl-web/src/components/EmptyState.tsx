@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { IconInbox } from './icons'
-import './EmptyState.css'
 
 export function EmptyState({
   title,
@@ -14,15 +13,15 @@ export function EmptyState({
 }) {
   return (
     <motion.div
-      className="empty-state"
+      className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-10 text-center text-muted-foreground"
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
     >
       <IconInbox size={28} strokeWidth={1.5} />
-      <p className="empty-state__title">{title}</p>
-      {description && <p className="empty-state__description">{description}</p>}
-      {action && <div className="empty-state__action">{action}</div>}
+      <p className="font-medium text-foreground">{title}</p>
+      {description && <p className="text-sm">{description}</p>}
+      {action && <div className="mt-2">{action}</div>}
     </motion.div>
   )
 }
