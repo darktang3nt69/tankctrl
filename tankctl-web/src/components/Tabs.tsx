@@ -1,6 +1,5 @@
-import { motion } from 'motion/react'
 import type { LucideIcon } from 'lucide-react'
-import './Tabs.css'
+import { Tabs as TabsRoot, TabsList, TabsTrigger } from './ui/tabs'
 
 export interface TabDef {
   id: string
@@ -18,27 +17,15 @@ export function Tabs({
   onChange: (id: string) => void
 }) {
   return (
-    <div className="tabs" role="tablist">
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          role="tab"
-          type="button"
-          aria-selected={tab.id === activeId}
-          className={`tabs__tab ${tab.id === activeId ? 'tabs__tab--active' : ''}`}
-          onClick={() => onChange(tab.id)}
-        >
-          {tab.Icon && <tab.Icon size={14} className="tabs__tab-icon" />}
-          {tab.label}
-          {tab.id === activeId && (
-            <motion.span
-              layoutId="tabs-underline"
-              className="tabs__underline"
-              transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-            />
-          )}
-        </button>
-      ))}
-    </div>
+    <TabsRoot value={activeId} onValueChange={onChange}>
+      <TabsList>
+        {tabs.map((tab) => (
+          <TabsTrigger key={tab.id} value={tab.id} className="gap-1.5">
+            {tab.Icon && <tab.Icon size={14} />}
+            {tab.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </TabsRoot>
   )
 }
