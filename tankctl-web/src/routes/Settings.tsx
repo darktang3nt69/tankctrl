@@ -1,79 +1,93 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { toast } from 'sonner'
 import { useDevices, useRegisterDevice } from '../api/devices'
-import { useToast } from '../components/Toast'
-import '../features/tank-detail/tab-panels.css'
-import './Settings.css'
+import { Button } from '../components/ui/button'
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '../components/ui/form'
+import { Input } from '../components/ui/input'
+
+const registerSchema = z.object({
+  deviceId: z
+    .string()
+    .min(1, 'Device ID is required')
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Alphanumeric, underscore, hyphen only'),
+})
 
 export function Settings() {
   const { data: devices } = useDevices()
   const registerDevice = useRegisterDevice()
-  const toast = useToast()
-
-  const [deviceId, setDeviceId] = useState('')
   const [secret, setSecret] = useState<{ device_secret: string; mqtt_password: string } | null>(null)
 
-  function handleRegister(e: React.FormEvent) {
-    e.preventDefault()
-    registerDevice.mutate(deviceId, {
+  const form = useForm<z.infer<typeof registerSchema>>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: { deviceId: '' },
+  })
+
+  function onSubmit(values: z.infer<typeof registerSchema>) {
+    registerDevice.mutate(values.deviceId, {
       onSuccess: (res) => {
         setSecret({ device_secret: res.device_secret, mqtt_password: res.mqtt_password })
-        setDeviceId('')
+        form.reset()
       },
-      onError: () => toast.show('Failed to register device — is the id already taken?', 'danger'),
+      onError: () => toast.error("Failed to register device — is the id already taken?"),
     })
   }
 
   return (
     <div>
-      <h1 className="page-title">Settings</h1>
+      <h1 className="mb-5 text-2xl font-bold tracking-tight">Settings</h1>
 
-      <section className="card tab-section">
-        <h3 className="tab-section__title">Register a device</h3>
-        <form onSubmit={handleRegister}>
-          <div className="field">
-            <label htmlFor="new-device-id">Device ID</label>
-            <input
-              id="new-device-id"
-              value={deviceId}
-              onChange={(e) => setDeviceId(e.target.value)}
-              placeholder="tank1"
-              pattern="[a-zA-Z0-9_-]+"
-              required
+      <section className="mb-6 rounded-lg border bg-card p-5">
+        <h3 className="mb-4 font-semibold">Register a device</h3>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="deviceId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Device ID</FormLabel>
+                  <FormControl>
+                    <Input placeholder="tank1" {...field} />
+                  </FormControl>
+                  <FormDescription>Alphanumeric, underscore, hyphen only.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
             />
-            <span className="field__hint">Alphanumeric, underscore, hyphen only.</span>
-          </div>
-          <button type="submit" className="btn btn--primary" disabled={registerDevice.isPending}>
-            Register
-          </button>
-        </form>
+            <Button type="submit" disabled={registerDevice.isPending}>
+              Register
+            </Button>
+          </form>
+        </Form>
 
         {secret && (
-          <div className="settings__secret-box" role="alert">
-            <p className="settings__secret-warning">
-              Copy these now — they will not be shown again.
-            </p>
-            <p className="mono">device_secret: {secret.device_secret}</p>
-            <p className="mono">mqtt_password: {secret.mqtt_password}</p>
+          <div role="alert" className="mt-4 rounded-md border border-[var(--warn)] bg-[var(--warn-fill)] p-3">
+            <p className="mb-2 text-sm font-medium">Copy these now — they will not be shown again.</p>
+            <p className="font-mono text-sm">device_secret: {secret.device_secret}</p>
+            <p className="font-mono text-sm">mqtt_password: {secret.mqtt_password}</p>
           </div>
         )}
       </section>
 
-      <section className="card tab-section">
-        <h3 className="tab-section__title">Devices</h3>
+      <section className="rounded-lg border bg-card p-5">
+        <h3 className="mb-4 font-semibold">Devices</h3>
         {(devices ?? []).length === 0 ? (
-          <p className="field__hint">No devices registered yet.</p>
+          <p className="text-sm text-muted-foreground">No devices registered yet.</p>
         ) : (
-          <ul className="settings__device-list">
+          <ul className="divide-y">
             {(devices ?? []).map((d) => (
-              <li key={d.device_id} className="tab-section__row">
-                <div className="tab-section__row-main">
-                  <span className="tab-section__row-title">{d.device_name ?? d.device_id}</span>
-                  <span className="tab-section__row-meta mono">{d.device_id}</span>
+              <li key={d.device_id} className="flex items-center justify-between gap-4 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium">{d.device_name ?? d.device_id}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{d.device_id}</span>
                 </div>
-                <Link to={`/tanks/${d.device_id}?tab=relays`} className="btn">
-                  Configure relays
-                </Link>
+                <Button asChild variant="outline" size="sm">
+                  <Link to={`/tanks/${d.device_id}?tab=relays`}>Configure relays</Link>
+                </Button>
               </li>
             ))}
           </ul>
