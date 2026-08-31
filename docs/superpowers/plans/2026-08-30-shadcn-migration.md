@@ -2628,7 +2628,7 @@ const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const waterScheduleSchema = z
   .object({
     schedule_type: z.enum(['weekly', 'custom', 'interval']),
-    days_of_week: z.array(z.number().int().min(0).max(6)),
+    days_of_week: z.array(z.number().int().min(0).max(6)).nullable(),
     schedule_date: z.string().nullable(),
     interval_days: z.coerce.number().int().positive().nullable(),
     schedule_time: z.string().min(1, 'Time is required'),
