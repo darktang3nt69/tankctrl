@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
-import './LineChart.css'
+import { Button } from './ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 export interface ChartPoint {
   t: Date
@@ -64,7 +66,7 @@ export function LineChart({ data, unit = '', color, fillColor, stale, dayTicks, 
   }, [data, plotH, plotW])
 
   if (data.length === 0) {
-    return <div className="line-chart line-chart--empty">No data yet</div>
+    return <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No data yet</div>
   }
 
   const lastIdx = data.length - 1
@@ -80,15 +82,20 @@ export function LineChart({ data, unit = '', color, fillColor, stale, dayTicks, 
     setHoverIdx(idx)
   }
 
+  function tooltipText(idx: number) {
+    const p = data[idx]
+    return `${dayTicks ? formatDate(p.t) : formatTime(p.t)} · ${p.value.toFixed(1)}${unit}`
+  }
+
   return (
-    <div className="line-chart">
-      <div className="line-chart__wrap">
+    <div className="flex flex-col gap-1.5">
+      <div className="relative">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${WIDTH} ${height}`}
           role="img"
           aria-label={ariaLabel}
-          className="line-chart__svg"
+          className="block h-auto w-full cursor-crosshair"
         >
           {gridSteps.map((v, i) => (
             <g key={i}>
@@ -101,7 +108,7 @@ export function LineChart({ data, unit = '', color, fillColor, stale, dayTicks, 
                 strokeWidth={1}
                 strokeDasharray="2 3"
               />
-              <text x={PAD_L - 8} y={y(v) + 3.5} textAnchor="end" className="line-chart__axis-label">
+              <text x={PAD_L - 8} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground font-mono text-[10px]">
                 {v.toFixed(0)}
                 {unit}
               </text>
@@ -134,19 +141,30 @@ export function LineChart({ data, unit = '', color, fillColor, stale, dayTicks, 
                 x={x(idx)}
                 y={height - 8}
                 textAnchor={tick === 0 ? 'start' : tick === 4 ? 'end' : 'middle'}
-                className="line-chart__axis-label"
+                className="fill-muted-foreground font-mono text-[10px]"
               >
                 {dayTicks ? formatDate(data[idx].t) : formatTime(data[idx].t)}
               </text>
             )
           })}
-          <circle cx={x(lastIdx)} cy={y(data[lastIdx].value)} r={7} fill="var(--surface)" />
-          <circle cx={x(lastIdx)} cy={y(data[lastIdx].value)} r={5} fill={stale ? 'var(--ink-faint)' : color} />
+          <circle cx={x(lastIdx)} cy={y(data[lastIdx].value)} r={7} fill="var(--card)" />
+          <circle cx={x(lastIdx)} cy={y(data[lastIdx].value)} r={5} fill={stale ? 'var(--muted-foreground)' : color} />
+          <Tooltip open={hoverIdx !== null}>
+            <TooltipTrigger asChild>
+              <circle
+                cx={x(hoverIdx ?? lastIdx)}
+                cy={y(data[hoverIdx ?? lastIdx].value)}
+                r={5}
+                fill={color}
+                stroke="var(--card)"
+                strokeWidth={2}
+                opacity={hoverIdx === null ? 0 : 1}
+              />
+            </TooltipTrigger>
+            <TooltipContent>{tooltipText(hoverIdx ?? lastIdx)}</TooltipContent>
+          </Tooltip>
           {hoverIdx !== null && (
-            <>
-              <line x1={x(hoverIdx)} x2={x(hoverIdx)} y1={PAD_T} y2={PAD_T + plotH} stroke="var(--ink-faint)" strokeWidth={1} />
-              <circle cx={x(hoverIdx)} cy={y(data[hoverIdx].value)} r={5} fill={color} stroke="var(--surface)" strokeWidth={2} />
-            </>
+            <line x1={x(hoverIdx)} x2={x(hoverIdx)} y1={PAD_T} y2={PAD_T + plotH} stroke="var(--muted-foreground)" strokeWidth={1} />
           )}
           <rect
             x={PAD_L}
@@ -158,37 +176,37 @@ export function LineChart({ data, unit = '', color, fillColor, stale, dayTicks, 
             onPointerLeave={() => setHoverIdx(null)}
           />
         </svg>
-        <div className="line-chart__readout mono">
+        <div className="mt-1 font-mono text-xs text-muted-foreground">
           {dayTicks ? formatDate(active.t) : formatTime(active.t)} · {active.value.toFixed(1)}
           {unit}
-          {stale && activeIdx === lastIdx && <span className="line-chart__stale-tag"> · stale</span>}
+          {stale && activeIdx === lastIdx && <span className="ml-1 font-semibold text-[var(--warn)]"> · stale</span>}
         </div>
       </div>
-      <button type="button" className="btn btn--ghost line-chart__table-toggle" onClick={() => setShowTable((s) => !s)}>
+      <Button type="button" variant="ghost" size="sm" className="self-start text-xs underline decoration-dotted" onClick={() => setShowTable((s) => !s)}>
         {showTable ? 'Hide table' : 'View as table'}
-      </button>
+      </Button>
       {showTable && (
-        <table className="data-table line-chart__table">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Value</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Time</TableHead>
+              <TableHead>Value</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {data.slice(-24).map((d, i) => (
-              <tr key={i}>
-                <td className="mono">
+              <TableRow key={i}>
+                <TableCell className="font-mono">
                   {formatTime(d.t)} · {formatDate(d.t)}
-                </td>
-                <td className="mono">
+                </TableCell>
+                <TableCell className="font-mono">
                   {d.value.toFixed(1)}
                   {unit}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       )}
     </div>
   )
