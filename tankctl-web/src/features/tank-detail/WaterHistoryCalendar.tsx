@@ -48,7 +48,8 @@ export function WaterHistoryCalendar({ schedules }: { schedules: WaterSchedule[]
           if (s.days_of_week.includes(d.getDay())) add(toLocalDateKey(d), s)
         }
       } else if (s.schedule_type === 'interval' && s.interval_days && s.created_at) {
-        const anchor = new Date(s.created_at)
+        const anchorRaw = new Date(s.created_at)
+        const anchor = new Date(anchorRaw.getFullYear(), anchorRaw.getMonth(), anchorRaw.getDate())
         for (const d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
           const diffDays = Math.round((d.getTime() - anchor.getTime()) / 86_400_000)
           if (diffDays >= 0 && diffDays % s.interval_days === 0) add(toLocalDateKey(d), s)
