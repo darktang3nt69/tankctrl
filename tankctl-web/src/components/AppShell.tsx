@@ -1,9 +1,11 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'motion/react'
+import { useTheme } from 'next-themes'
+import { Moon, Sun } from 'lucide-react'
 import { useLiveConnectionStatus } from '../ws/LiveEventsProvider'
 import { StatusPill } from './StatusPill'
+import { Button } from './ui/button'
 import { IconAlerts, IconOverview, IconSettings } from './icons'
-import './AppShell.css'
 
 const NAV_ITEMS = [
   { to: '/', end: true, label: 'Overview', Icon: IconOverview },
@@ -14,57 +16,71 @@ const NAV_ITEMS = [
 export function AppShell() {
   const status = useLiveConnectionStatus()
   const location = useLocation()
+  const { resolvedTheme, setTheme } = useTheme()
 
   return (
-    <div className="app-shell">
-      <a href="#main-content" className="visually-hidden app-shell__skip-link">
+    <div className="flex min-h-full">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground"
+      >
         Skip to content
       </a>
-      <aside className="app-shell__rail">
-        <div className="app-shell__brand">
-          <span className="app-shell__mark" aria-hidden="true">
+      <aside className="flex w-56 shrink-0 flex-col border-r bg-card px-3 py-4">
+        <div className="mb-6 flex items-center gap-2 px-2 text-sm font-semibold">
+          <span
+            aria-hidden="true"
+            className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground"
+          >
             T
           </span>
           TankCtl
         </div>
-        <nav className="app-shell__nav">
+        <nav className="flex flex-col gap-1">
           {NAV_ITEMS.map(({ to, end, label, Icon }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
-              className={({ isActive }) => (isActive ? 'app-shell__link app-shell__link--active' : 'app-shell__link')}
+              className={({ isActive }) =>
+                `relative flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  isActive ? 'text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`
+              }
             >
               {({ isActive }) => (
                 <>
                   {isActive && (
                     <motion.span
                       layoutId="app-shell-active-nav"
-                      className="app-shell__link-bg"
+                      className="absolute inset-0 -z-10 rounded-md bg-accent"
                       transition={{ type: 'spring', stiffness: 500, damping: 40 }}
                     />
                   )}
-                  <Icon size={18} className="app-shell__link-icon" />
-                  <span className="app-shell__link-label">{label}</span>
+                  <Icon size={18} />
+                  <span>{label}</span>
                 </>
               )}
             </NavLink>
           ))}
         </nav>
-        <div className="app-shell__foot">
+        <div className="mt-auto flex items-center justify-between gap-2 px-2 pt-4">
           <StatusPill
             tone={status === 'connected' ? 'ok' : status === 'polling-fallback' ? 'danger' : 'warn'}
-            label={
-              status === 'connected'
-                ? 'Live'
-                : status === 'polling-fallback'
-                  ? 'Polling'
-                  : 'Reconnecting'
-            }
+            label={status === 'connected' ? 'Live' : status === 'polling-fallback' ? 'Polling' : 'Reconnecting'}
           />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={resolvedTheme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+          >
+            {resolvedTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </Button>
         </div>
       </aside>
-      <main id="main-content" className="app-shell__main">
+      <main id="main-content" className="flex-1 overflow-y-auto p-6">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={location.pathname}
