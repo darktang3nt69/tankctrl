@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { useDevices } from '../api/devices'
 import { useDismissAttention, useEventTypes, useEvents } from '../api/events'
-import { useToast } from '../components/Toast'
 import { EmptyState } from '../components/EmptyState'
-import './Alerts.css'
+import { Button } from '../components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { eventLabel } from '../lib/eventLabels'
 
 export function Alerts() {
   const [deviceFilter, setDeviceFilter] = useState('')
@@ -15,7 +17,6 @@ export function Alerts() {
     eventType: typeFilter || undefined,
   })
   const dismiss = useDismissAttention()
-  const toast = useToast()
 
   function deviceLabel(deviceId: string | null) {
     if (!deviceId) return '—'
@@ -25,47 +26,62 @@ export function Alerts() {
 
   return (
     <div>
-      <h1 className="page-title">Alerts</h1>
-      <div className="search-filter-bar">
-        <select value={deviceFilter} onChange={(e) => setDeviceFilter(e.target.value)} aria-label="Filter by device">
-          <option value="">All devices</option>
-          {(devices ?? []).map((d) => (
-            <option key={d.device_id} value={d.device_id}>
-              {d.device_name ?? d.device_id}
-            </option>
-          ))}
-        </select>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Filter by event type">
-          <option value="">All types</option>
-          {(eventTypes ?? []).map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
+      <h1 className="mb-5 text-2xl font-bold tracking-tight">Alerts</h1>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <Select value={deviceFilter || 'all'} onValueChange={(v) => setDeviceFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger aria-label="Filter by device" className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All devices</SelectItem>
+            {(devices ?? []).map((d) => (
+              <SelectItem key={d.device_id} value={d.device_id}>
+                {d.device_name ?? d.device_id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter || 'all'} onValueChange={(v) => setTypeFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger aria-label="Filter by event type" className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            {(eventTypes ?? []).map((t) => (
+              <SelectItem key={t} value={t}>
+                {eventLabel(t)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
-        <p>Loading alerts…</p>
+        <p className="text-sm text-muted-foreground">Loading alerts…</p>
       ) : !events || events.length === 0 ? (
         <EmptyState title="No alerts" description="Nothing to review right now." />
       ) : (
-        <div className="card">
+        <div className="divide-y rounded-lg border bg-card">
           {events.map((e, i) => {
             const meta = e.metadata as Record<string, unknown>
+            const code = e.event === 'device_warning' && typeof meta.code === 'string' ? meta.code : null
             return (
-              <div key={i} className="alerts__row">
-                <div className="alerts__row-main">
-                  <span className="alerts__row-title">{e.event}</span>
-                  <span className="alerts__row-meta mono">
+              <div key={i} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium">
+                    {eventLabel(e.event)}
+                    {code && <span className="ml-1.5 font-mono text-xs text-muted-foreground">({code})</span>}
+                  </span>
+                  <span className="font-mono text-xs text-muted-foreground">
                     {new Date(e.timestamp * 1000).toLocaleString()} · {deviceLabel(e.device_id)}
                     {typeof meta.message === 'string' ? ` · ${meta.message}` : ''}
                   </span>
                 </div>
                 {e.event === 'device_warning' && e.device_id && (
-                  <button
+                  <Button
                     type="button"
-                    className="btn"
+                    variant="outline"
+                    size="sm"
                     disabled={dismiss.isPending}
                     onClick={() =>
                       dismiss.mutate(
@@ -75,14 +91,14 @@ export function Alerts() {
                           issue_type: 'device_warning',
                         },
                         {
-                          onSuccess: () => toast.show('Alert acknowledged'),
-                          onError: () => toast.show('Failed to acknowledge alert', 'danger'),
+                          onSuccess: () => toast.success('Alert acknowledged'),
+                          onError: () => toast.error('Failed to acknowledge alert'),
                         },
                       )
                     }
                   >
                     Acknowledge
-                  </button>
+                  </Button>
                 )}
               </div>
             )
