@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS telemetry (
     time TIMESTAMPTZ NOT NULL,
     device_id TEXT NOT NULL,
     temperature DOUBLE PRECISION,
-    humidity DOUBLE PRECISION,
+    tds DOUBLE PRECISION,
     pressure DOUBLE PRECISION,
     metadata JSONB
 );
@@ -20,6 +20,6 @@ ON telemetry (device_id, time DESC);
 CREATE INDEX IF NOT EXISTS idx_telemetry_temperature
 ON telemetry (device_id, temperature) WHERE temperature IS NOT NULL;
 
--- Create index on humidity for analytics queries
-CREATE INDEX IF NOT EXISTS idx_telemetry_humidity
-ON telemetry (device_id, humidity) WHERE humidity IS NOT NULL;
+-- Create index on tds for analytics queries
+CREATE INDEX IF NOT EXISTS idx_telemetry_tds
+ON telemetry (device_id, tds) WHERE tds IS NOT NULL;

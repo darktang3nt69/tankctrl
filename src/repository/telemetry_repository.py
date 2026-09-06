@@ -208,7 +208,7 @@ class TelemetryRepository:
         self,
         device_id: str,
         temperature: Optional[float] = None,
-        humidity: Optional[float] = None,
+        tds: Optional[float] = None,
         pressure: Optional[float] = None,
         metadata: Optional[dict] = None,
     ) -> None:
@@ -218,7 +218,7 @@ class TelemetryRepository:
         Args:
             device_id: Device identifier
             temperature: Temperature reading (optional)
-            humidity: Humidity reading (optional)
+            tds: TDS reading in ppm (optional)
             pressure: Pressure reading (optional)
             metadata: Additional metadata as dict (optional)
 
@@ -233,12 +233,12 @@ class TelemetryRepository:
             
             # Use raw SQL for direct TimescaleDB insertion
             query = text("""
-                INSERT INTO telemetry (time, device_id, temperature, humidity, pressure, metadata)
+                INSERT INTO telemetry (time, device_id, temperature, tds, pressure, metadata)
                 VALUES (
                     NOW() AT TIME ZONE 'UTC',
                     :device_id,
                     :temperature,
-                    :humidity,
+                    :tds,
                     :pressure,
                     CAST(:metadata AS JSONB)
                 )
@@ -249,7 +249,7 @@ class TelemetryRepository:
                 {
                     "device_id": device_id,
                     "temperature": temperature,
-                    "humidity": humidity,
+                    "tds": tds,
                     "pressure": pressure,
                     "metadata": metadata_json,
                 },
@@ -260,7 +260,7 @@ class TelemetryRepository:
                 "telemetry_inserted",
                 device_id=device_id,
                 temperature=temperature,
-                humidity=humidity,
+                tds=tds,
                 pressure=pressure,
             )
 
@@ -269,6 +269,8 @@ class TelemetryRepository:
         device_id: str,
         limit: int = 100,
         hours: Optional[int] = None,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
     ) -> list[dict]:
         """
         Get recent telemetry for a device.
@@ -276,16 +278,24 @@ class TelemetryRepository:
         Args:
             device_id: Device identifier
             limit: Maximum number of records (default 100)
-            hours: Optional time window in hours (default: all time)
+            hours: Optional rolling time window in hours (default: all time)
+            start: Optional arbitrary range start (takes precedence over hours)
+            end: Optional arbitrary range end (defaults to now when start is set)
 
         Returns:
-            List of telemetry records with time, temperature, humidity, pressure
+            List of telemetry records with time, temperature, tds, pressure
         """
         try:
             where_clause = "WHERE device_id = :device_id"
             params = {"device_id": device_id, "limit": limit}
-            
-            if hours:
+
+            if start is not None:
+                where_clause += " AND time >= :start"
+                params["start"] = start
+                if end is not None:
+                    where_clause += " AND time <= :end"
+                    params["end"] = end
+            elif hours:
                 where_clause += " AND time > NOW() - (:hours * INTERVAL '1 hour')"
                 params["hours"] = hours
             
@@ -294,7 +304,7 @@ class TelemetryRepository:
                     time,
                     device_id,
                     temperature,
-                    humidity,
+                    tds,
                     pressure,
                     metadata
                 FROM telemetry
@@ -312,7 +322,7 @@ class TelemetryRepository:
                     "time": isoformat_in_app_timezone(row[0]),
                     "device_id": row[1],
                     "temperature": row[2],
-                    "humidity": row[3],
+                    "tds": row[3],
                     "pressure": row[4],
                     "metadata": row[5],
                 })
@@ -339,13 +349,13 @@ class TelemetryRepository:
 
         Args:
             device_id: Device identifier
-            metric: Metric name ('temperature', 'humidity', or 'pressure')
+            metric: Metric name ('temperature', 'tds', or 'pressure')
             limit: Maximum number of records
 
         Returns:
             List of records with time and metric value
         """
-        if metric not in ("temperature", "humidity", "pressure"):
+        if metric not in ("temperature", "tds", "pressure"):
             raise ValueError(f"Invalid metric: {metric}")
         
         try:
@@ -403,7 +413,7 @@ class TelemetryRepository:
                 "max": val(row[3]),
                 "min": val(row[4]),
             },
-            "humidity": {
+            "tds": {
                 "avg": val(row[5]),
                 "max": val(row[6]),
                 "min": val(row[7]),
@@ -415,6 +425,8 @@ class TelemetryRepository:
         self,
         device_id: str,
         hours: int = 24,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
     ) -> list[dict]:
         """
         Get hourly aggregated telemetry for device.
@@ -424,32 +436,44 @@ class TelemetryRepository:
 
         Args:
             device_id: Device identifier
-            hours: Number of hours to retrieve (default 24)
+            hours: Number of hours to retrieve (default 24), used when start/end
+                are not given
+            start: Optional arbitrary range start (takes precedence over hours)
+            end: Optional arbitrary range end (defaults to now when start is set)
 
         Returns:
             List of hourly aggregated records
         """
+        if start is not None:
+            view_range_clause = "hour >= :start" + (" AND hour <= :end" if end is not None else "")
+            raw_range_clause = "time >= :start" + (" AND time <= :end" if end is not None else "")
+            range_params = {"start": start, **({"end": end} if end is not None else {})}
+        else:
+            view_range_clause = "hour > NOW() - (:hours * INTERVAL '1 hour')"
+            raw_range_clause = "time > NOW() - (:hours * INTERVAL '1 hour')"
+            range_params = {"hours": hours}
+
         try:
             # First, try using the materialized view (if it exists)
-            query = text("""
+            query = text(f"""
                 SELECT
                     hour,
                     device_id,
                     temp_avg,
                     temp_max,
                     temp_min,
-                    humidity_avg,
-                    humidity_max,
-                    humidity_min,
+                    tds_avg,
+                    tds_max,
+                    tds_min,
                     sample_count
                 FROM telemetry_hourly
-                WHERE device_id = :device_id AND hour > NOW() - (:hours * INTERVAL '1 hour')
+                WHERE device_id = :device_id AND {view_range_clause}
                 ORDER BY hour DESC
             """)
-            
+
             results = self.session.execute(
                 query,
-                {"device_id": device_id, "hours": hours},
+                {"device_id": device_id, **range_params},
             ).fetchall()
             
             # Convert to list of dicts
@@ -476,26 +500,26 @@ class TelemetryRepository:
                     reason=str(view_error)[:100],
                 )
                 
-                fallback_query = text("""
+                fallback_query = text(f"""
                     SELECT
                         time_bucket('1 hour', time) as hour,
                         device_id,
                         AVG(temperature) as temp_avg,
                         MAX(temperature) as temp_max,
                         MIN(temperature) as temp_min,
-                        AVG(humidity) as humidity_avg,
-                        MAX(humidity) as humidity_max,
-                        MIN(humidity) as humidity_min,
+                        AVG(tds) as tds_avg,
+                        MAX(tds) as tds_max,
+                        MIN(tds) as tds_min,
                         COUNT(*) as sample_count
                     FROM telemetry
-                    WHERE device_id = :device_id AND time > NOW() - (:hours * INTERVAL '1 hour')
+                    WHERE device_id = :device_id AND {raw_range_clause}
                     GROUP BY hour, device_id
                     ORDER BY hour DESC
                 """)
-                
+
                 results = self.session.execute(
                     fallback_query,
-                    {"device_id": device_id, "hours": hours},
+                    {"device_id": device_id, **range_params},
                 ).fetchall()
                 
                 # Convert to list of dicts

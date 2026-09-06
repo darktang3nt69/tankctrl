@@ -167,6 +167,21 @@ class WaterScheduleReminderService:
             event_date = now.date() + timedelta(days=min_days_ahead)
             return self._event_dt(event_date, t, tz) - offset
 
+        elif schedule.schedule_type == "interval":
+            if not schedule.interval_days or schedule.interval_days <= 0:
+                return None
+            if not schedule.created_at:
+                return None
+            anchor = schedule.created_at.date()
+            days_since_anchor = (now.date() - anchor).days
+            if days_since_anchor < 0:
+                days_ahead = -days_since_anchor
+            else:
+                remainder = days_since_anchor % schedule.interval_days
+                days_ahead = 0 if remainder == 0 else schedule.interval_days - remainder
+            event_date = now.date() + timedelta(days=days_ahead)
+            return self._event_dt(event_date, t, tz) - offset
+
         return None
 
     # ------------------------------------------------------------------

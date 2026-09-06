@@ -143,13 +143,20 @@ class WaterScheduleModel(Base):
 
     id = Column(Integer, primary_key=True)
     device_id = Column(String(50), nullable=False, index=True)
-    schedule_type = Column(String(20), nullable=False)  # 'weekly' or 'custom'
+    schedule_type = Column(String(20), nullable=False)  # 'weekly', 'custom', or 'interval'
     days_of_week = Column(String(20), nullable=True)  # Comma-separated: "1,3,5" for Mon,Wed,Fri
     schedule_date = Column(String(10), nullable=True)  # YYYY-MM-DD for custom
+    interval_days = Column(Integer, nullable=True)  # every-N-days cadence for 'interval' type
     schedule_time = Column(Time, nullable=False)
     notes = Column(Text, nullable=True)
     completed = Column(Boolean, default=False)
     enabled = Column(Boolean, default=True)
+    # Water-quality readings, recorded optionally when closing out a water change
+    ph = Column(Float, nullable=True)
+    ammonia = Column(Float, nullable=True)
+    nitrite = Column(Float, nullable=True)
+    nitrate = Column(Float, nullable=True)
+    tds = Column(Float, nullable=True)
     last_reminder_sent_at = Column(DateTime, nullable=True)
     # Notification preferences (Phase 1)
     notify_24h = Column(Boolean, default=True)  # 24-hour before reminder

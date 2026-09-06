@@ -134,10 +134,13 @@ class ReportedStateHandler(MessageHandler):
                 if command.status not in (CommandStatus.PENDING, CommandStatus.SENT):
                     continue
 
-                if command.command == "set_light" and payload.get("light") == command.value:
-                    command_service.mark_command_executed(command.id)
-                elif command.command == "set_pump" and payload.get("pump") == command.value:
-                    command_service.mark_command_executed(command.id)
+                # Commands are named `set_{relay_name}` (see ShadowService.reconcile_shadow) —
+                # match any relay generically, not just the light/pump built-ins, so
+                # custom relays' commands resolve to executed too.
+                if command.command.startswith("set_"):
+                    relay_name = command.command[len("set_"):]
+                    if payload.get(relay_name) == command.value:
+                        command_service.mark_command_executed(command.id)
 
             logger.info("reported_state_handled", device_id=device_id)
 

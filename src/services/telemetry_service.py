@@ -4,6 +4,7 @@ Telemetry service layer.
 Handles business logic for storing and retrieving telemetry data from TimescaleDB.
 """
 
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -49,7 +50,7 @@ class TelemetryService:
         """
         Store telemetry data from device.
 
-        Parses payload and extracts metrics (temperature, humidity, pressure).
+        Parses payload and extracts metrics (temperature, tds, pressure).
         Stores each metric in TimescaleDB.
 
         Args:
@@ -59,7 +60,7 @@ class TelemetryService:
         Example payload:
             {
                 "temperature": 24.5,
-                "humidity": 65.2,
+                "tds": 65.2,
                 "pressure": 1013.25,
                 "metadata": {"location": "greenhouse"}
             }
@@ -70,14 +71,14 @@ class TelemetryService:
         logger.debug("telemetry_storing", device_id=device_id)
 
         try:
-            # Extract temperature, humidity, pressure
+            # Extract temperature, tds, pressure
             raw_temperature = payload.get("temperature")
-            raw_humidity = payload.get("humidity")
+            raw_tds = payload.get("tds")
             raw_pressure = payload.get("pressure")
             metadata = payload.get("metadata")
 
             # Reject payloads that contain no recognized metric keys at all.
-            if raw_temperature is None and raw_humidity is None and raw_pressure is None:
+            if raw_temperature is None and raw_tds is None and raw_pressure is None:
                 logger.warning(
                     "telemetry_no_metrics",
                     device_id=device_id,
@@ -88,11 +89,11 @@ class TelemetryService:
             # Normalize: converts invalid sensor readings (e.g. temperature=0)
             # to None so they are never stored as real data.
             temperature = self._normalize_metric("temperature", raw_temperature)
-            humidity = self._normalize_metric("humidity", raw_humidity)
+            tds = self._normalize_metric("tds", raw_tds)
             pressure = self._normalize_metric("pressure", raw_pressure)
 
             has_valid_data = not (
-                temperature is None and humidity is None and pressure is None
+                temperature is None and tds is None and pressure is None
             )
 
             if has_valid_data:
@@ -100,7 +101,7 @@ class TelemetryService:
                 self.repo.insert(
                     device_id=device_id,
                     temperature=temperature,
-                    humidity=humidity,
+                    tds=tds,
                     pressure=pressure,
                     metadata=metadata,
                 )
@@ -108,7 +109,7 @@ class TelemetryService:
                     "telemetry_stored",
                     device_id=device_id,
                     temperature=temperature,
-                    humidity=humidity,
+                    tds=tds,
                     pressure=pressure,
                 )
             else:
@@ -127,7 +128,7 @@ class TelemetryService:
                     device_id=device_id,
                     metrics={
                         "temperature": temperature,
-                        "humidity": humidity,
+                        "tds": tds,
                         "pressure": pressure,
                     },
                 )
@@ -150,15 +151,19 @@ class TelemetryService:
         metric_name: Optional[str] = None,
         limit: int = 100,
         hours: Optional[int] = None,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
     ) -> list[dict]:
         """
         Get telemetry data for a device.
 
         Args:
             device_id: Device identifier
-            metric_name: Optional specific metric ('temperature', 'humidity', 'pressure')
+            metric_name: Optional specific metric ('temperature', 'tds', 'pressure')
             limit: Maximum number of data points (default 100)
-            hours: Optional time window in hours
+            hours: Optional rolling time window in hours, ignored when start is given
+            start: Optional arbitrary range start
+            end: Optional arbitrary range end (defaults to now when start is set)
 
         Returns:
             List of telemetry data points
@@ -177,12 +182,16 @@ class TelemetryService:
                     device_id=device_id,
                     limit=limit,
                     hours=hours,
+                    start=start,
+                    end=end,
                 )
 
     def get_hourly_summary(
         self,
         device_id: str,
         hours: int = 24,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
     ) -> list[dict]:
         """
         Get hourly aggregated telemetry summary.
@@ -191,7 +200,9 @@ class TelemetryService:
 
         Args:
             device_id: Device identifier
-            hours: Number of hours to retrieve (default 24)
+            hours: Number of hours to retrieve (default 24), ignored when start is given
+            start: Optional arbitrary range start
+            end: Optional arbitrary range end (defaults to now when start is set)
 
         Returns:
             List of hourly aggregated records with min/max/avg
@@ -200,6 +211,8 @@ class TelemetryService:
             return self.repo.get_hourly_rollup(
                 device_id=device_id,
                 hours=hours,
+                start=start,
+                end=end,
             )
 
     def close(self) -> None:

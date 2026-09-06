@@ -254,7 +254,7 @@ def test_telemetry_storage():
     # Store telemetry from device
     telemetry_payload = {
         "temperature": 24.5,
-        "humidity": 65,
+        "tds": 180,
         "pressure": 1013.25
     }
 

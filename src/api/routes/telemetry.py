@@ -6,6 +6,9 @@ GET /devices/{device_id}/telemetry/{metric} - Get specific metric
 GET /devices/{device_id}/telemetry/hourly - Get hourly summary
 """
 
+from datetime import datetime
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
@@ -38,6 +41,8 @@ def get_telemetry(
     device_id: str,
     limit: int = 100,
     hours: int = None,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
     session: Session = Depends(get_db_telemetry)
 ):
     """
@@ -46,7 +51,9 @@ def get_telemetry(
     Args:
         device_id: Device ID
         limit: Maximum number of data points (default 100)
-        hours: Optional time window in hours
+        hours: Optional rolling time window in hours, ignored when start is given
+        start: Optional arbitrary range start (ISO 8601) - takes precedence over hours
+        end: Optional arbitrary range end (ISO 8601), defaults to now when start is set
 
     Returns:
         List of telemetry data points with timestamp and metrics
@@ -60,7 +67,7 @@ def get_telemetry(
                     "time": "2025-01-15T10:30:00+00:00",
                     "device_id": "tank1",
                     "temperature": 24.5,
-                    "humidity": 65.2,
+                    "tds": 65.2,
                     "pressure": null,
                     "metadata": null
                 }
@@ -73,14 +80,21 @@ def get_telemetry(
         
         if hours is not None and hours < 1:
             raise HTTPException(status_code=400, detail="Hours must be >= 1")
-        
-        logger.debug("getting_telemetry", device_id=device_id, limit=limit, hours=hours)
-        
+
+        if end is not None and start is None:
+            raise HTTPException(status_code=400, detail="end requires start")
+        if start is not None and end is not None and end < start:
+            raise HTTPException(status_code=400, detail="end must be after start")
+
+        logger.debug("getting_telemetry", device_id=device_id, limit=limit, hours=hours, start=start, end=end)
+
         telemetry_service = TelemetryService(session)
         data = telemetry_service.get_device_telemetry(
             device_id=device_id,
             limit=limit,
             hours=hours,
+            start=start,
+            end=end,
         )
         
         logger.info("telemetry_retrieved", device_id=device_id, count=len(data))
@@ -109,7 +123,7 @@ def get_metric(
 
     Args:
         device_id: Device ID
-        metric: Metric name ('temperature', 'humidity', or 'pressure')
+        metric: Metric name ('temperature', 'tds', or 'pressure')
         limit: Maximum number of data points (default 100)
 
     Returns:
@@ -131,10 +145,10 @@ def get_metric(
     """
     try:
         # Validate metric name
-        if metric not in ("temperature", "humidity", "pressure"):
+        if metric not in ("temperature", "tds", "pressure"):
             raise HTTPException(
                 status_code=400,
-                detail="Metric must be 'temperature', 'humidity', or 'pressure'"
+                detail="Metric must be 'temperature', 'tds', or 'pressure'"
             )
 
         _validate_limit(limit)
@@ -177,6 +191,8 @@ def get_metric(
 def get_hourly_summary(
     device_id: str,
     hours: int = 24,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
     session: Session = Depends(get_db_telemetry)
 ):
     """
@@ -204,7 +220,7 @@ def get_hourly_summary(
                         "max": 25.1,
                         "min": 23.5
                     },
-                    "humidity": {
+                    "tds": {
                         "avg": 63.5,
                         "max": 68.2,
                         "min": 60.1
@@ -217,13 +233,20 @@ def get_hourly_summary(
     try:
         if hours < 1 or hours > 8760:  # Max 1 year
             raise HTTPException(status_code=400, detail="Hours must be between 1 and 8760")
-        
-        logger.debug("getting_hourly_summary", device_id=device_id, hours=hours)
-        
+
+        if end is not None and start is None:
+            raise HTTPException(status_code=400, detail="end requires start")
+        if start is not None and end is not None and end < start:
+            raise HTTPException(status_code=400, detail="end must be after start")
+
+        logger.debug("getting_hourly_summary", device_id=device_id, hours=hours, start=start, end=end)
+
         telemetry_service = TelemetryService(session)
         data = telemetry_service.get_hourly_summary(
             device_id=device_id,
             hours=hours,
+            start=start,
+            end=end,
         )
         
         logger.info("hourly_summary_retrieved", device_id=device_id, count=len(data))
