@@ -39,6 +39,7 @@ permalink: tankctl/firmware/esp32/pinout
 | **Relay Control** | 4 | Active-LOW (HIGH=OFF, LOW=ON) |
 | **Temperature** | 23 | 1-Wire protocol, needs 4.7kΩ pullup |
 | **Status LED** | 2 | Optional; pulse/blink for connection status |
+| **TDS Probe** | 34 | Analog input only; linear ADC→ppm, calibration provisional |
 
 ## Complete ESP32 Pinout
 
@@ -72,6 +73,13 @@ ESP32 3V3 ─[4.7kΩ]─┬─ GPIO 23 (data)
 DS18B20 Pin 1 (GND) ─┤
 DS18B20 Pin 2 (data)┤
 DS18B20 Pin 3 (3V3) ┴─ ESP32 3V3
+```
+
+### TDS Probe
+```
+ESP32 GPIO 34 ←  TDS probe analog output
+ESP32 GND     →  TDS probe GND
+ESP32 3V3     →  TDS probe VCC (check probe's supply voltage first)
 ```
 
 ### Status LED (optional)

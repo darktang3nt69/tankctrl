@@ -147,8 +147,8 @@
  */
 
 // ===== CONFIG =====
-#define WIFI_SSID "EMPIRE"
-#define WIFI_PASSWORD "30379718"
+#define WIFI_SSID "YOUR_WIFI_SSID"
+#define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
 #define MQTT_SERVER "192.168.1.100"
 #define MQTT_PORT 1883
@@ -160,6 +160,12 @@
 #define DEFAULT_TANK_ID "POND-ESP32"
 #define ONE_WIRE_PIN 23    // GPIO 23 for temperature sensor
 #define STATUS_LED_PIN 2   // GPIO 2 for status LED (optional, built-in on many ESP32 boards)
+#define TDS_PIN 34         // GPIO 34 (ADC1, input-only) for the TDS probe's analog output
+
+// ponytail: linear ADC->ppm conversion, no temperature compensation. Real TDS
+// probes need calibration against a reference solution (e.g. 342ppm/707uS
+// standard) - replace this constant once the actual probe is on hand.
+#define TDS_CALIBRATION_FACTOR 0.5f
 
 // Multi-relay defaults (if NVS config unavailable)
 #define DEFAULT_LIGHT_GPIO 4
@@ -234,6 +240,7 @@ char tankId[TANK_ID_MAX_LEN] = {0};
 char deviceSecret[DEVICE_SECRET_MAX_LEN] = {0};
 bool deviceRegistered = false;
 float temperature = 0.0;
+float tdsPpm = 0.0;
 int lastCommandVersion = 0;
 
 // Multi-relay management
@@ -1424,6 +1431,18 @@ void handleRebootDevice() {
   ESP.restart();
 }
 
+// ===== TDS SENSOR =====
+// Reads the analog TDS probe and converts to ppm. Returns -1 if the ADC
+// reading is out of a plausible range (probe disconnected/shorted).
+float readTdsPpm() {
+  int raw = analogRead(TDS_PIN);
+  if (raw <= 0 || raw >= 4095) {
+    return -1.0f;
+  }
+  float voltage = (raw / 4095.0f) * 3.3f;
+  return voltage * 1000.0f * TDS_CALIBRATION_FACTOR;
+}
+
 // ===== TELEMETRY =====
 void publishTelemetry() {
   if (!mqttClient.connected()) {
@@ -1441,17 +1460,22 @@ void publishTelemetry() {
     // Generate random float between TEMP_MIN and TEMP_MAX
     float randTemp = TEMP_MIN + (random(0, 1000) / 1000.0f) * (TEMP_MAX - TEMP_MIN);
     temperature = randTemp;
-    
+    tdsPpm = readTdsPpm();
+
     Serial.print("Telemetry (random): temp=");
     Serial.print(temperature);
-    Serial.println("°C");
-    
+    Serial.print("°C tds=");
+    Serial.println(tdsPpm);
+
     StaticJsonDocument<128> doc;
     doc["temperature"] = temperature;
-    
+    if (tdsPpm >= 0) {
+      doc["tds"] = tdsPpm;
+    }
+
     char buffer[128];
     serializeJson(doc, buffer);
-    
+
     mqttClient.publish(topicTelemetry, buffer);
   }
 #else
@@ -1497,12 +1521,28 @@ void publishTelemetry() {
     serializeJson(warnDoc, warnBuf);
     mqttClient.publish(topicStatus, warnBuf);
   }
-  
+
+  tdsPpm = readTdsPpm();
+  if (tdsPpm < 0) {
+    Serial.println("Telemetry: TDS sensor unavailable, omitting tds field");
+
+    StaticJsonDocument<128> warnDoc;
+    warnDoc["event"]   = "warning";
+    warnDoc["code"]    = "tds_sensor_unavailable";
+    warnDoc["message"] = "TDS sensor not connected or reading invalid";
+    char warnBuf[128];
+    serializeJson(warnDoc, warnBuf);
+    mqttClient.publish(topicStatus, warnBuf);
+  }
+
   doc["temperature"] = temperature;
-  
+  if (tdsPpm >= 0) {
+    doc["tds"] = tdsPpm;
+  }
+
   char buffer[128];
   serializeJson(doc, buffer);
-  
+
   mqttClient.publish(topicTelemetry, buffer);
 #endif
 }

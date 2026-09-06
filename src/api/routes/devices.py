@@ -573,6 +573,7 @@ def _serialize_water_schedule(schedule) -> WaterScheduleResponse:
         schedule_type=schedule.schedule_type,
         days_of_week=days_of_week,
         schedule_date=schedule.schedule_date,  # already an ISO 'YYYY-MM-DD' string
+        interval_days=schedule.interval_days,
         schedule_time=str(schedule.schedule_time),
         notes=schedule.notes,
         completed=schedule.completed,
@@ -580,6 +581,11 @@ def _serialize_water_schedule(schedule) -> WaterScheduleResponse:
         notify_24h=schedule.notify_24h,
         notify_1h=schedule.notify_1h,
         notify_on_time=schedule.notify_on_time,
+        ph=schedule.ph,
+        ammonia=schedule.ammonia,
+        nitrite=schedule.nitrite,
+        nitrate=schedule.nitrate,
+        tds=schedule.tds,
         created_at=schedule.created_at.isoformat() if schedule.created_at else None,
         updated_at=schedule.updated_at.isoformat() if schedule.updated_at else None,
     )

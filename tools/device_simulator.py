@@ -54,7 +54,7 @@ class DeviceState:
     light: str = "off"  # on/off
     pump: str = "off"  # on/off
     temperature: float = 22.0  # °C
-    humidity: float = 55.0  # %
+    tds: float = 180.0  # ppm
     pressure: float = 1013.25  # hPa
     last_command_version: int = 0  # For idempotency
 
@@ -266,16 +266,16 @@ class SimulatedDevice:
                 # Constrain to reasonable range
                 self.state.temperature = max(10.0, min(40.0, self.state.temperature))
 
-                # Simulate humidity variation
-                self.state.humidity += random.uniform(-2, 2)
-                self.state.humidity = max(30.0, min(90.0, self.state.humidity))
+                # Simulate TDS variation
+                self.state.tds += random.uniform(-5, 5)
+                self.state.tds = max(50.0, min(500.0, self.state.tds))
 
                 # Publish telemetry
                 topic = f"tankctl/{self.device_id}/telemetry"
                 payload = json.dumps(
                     {
                         "temperature": round(self.state.temperature, 2),
-                        "humidity": round(self.state.humidity, 2),
+                        "tds": round(self.state.tds, 2),
                         "pressure": round(self.state.pressure, 2),
                     },
                     separators=(",", ":"),
@@ -284,7 +284,7 @@ class SimulatedDevice:
                 self.client.publish(topic, payload, qos=0, retain=False)
                 logger.debug(
                     f"[{self.device_id}] telemetry temperature={self.state.temperature:.1f}°C "
-                    f"humidity={self.state.humidity:.1f}% pressure={self.state.pressure:.2f}hPa"
+                    f"tds={self.state.tds:.1f}ppm pressure={self.state.pressure:.2f}hPa"
                 )
 
             except Exception as e:

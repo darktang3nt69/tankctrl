@@ -11,8 +11,9 @@ Arduino firmware for TankCtl smart aquarium light control system.
 ## Hardware Requirements
 
 - **Arduino UNO R4 WiFi**
-- **Relay module** (connected to pin D5) for light control
+- **Relay module** (connected to pin D4) for light control
 - **DS18B20 temperature sensor** (optional, connected to pin D6)
+- **TDS probe** (optional, analog output connected to pin A0)
 
 ## Features
 
@@ -86,7 +87,7 @@ The device uses the following topics (where `{tank_id}` is your configured tank 
 |-------|-----------|---------|
 | `tankctl/{tank_id}/command` | Subscribe | Receives commands from backend |
 | `tankctl/{tank_id}/reported` | Publish | Reports device state after commands |
-| `tankctl/{tank_id}/telemetry` | Publish | Sends temperature readings (every 5s) |
+| `tankctl/{tank_id}/telemetry` | Publish | Sends temperature + TDS readings (every 5s) |
 | `tankctl/{tank_id}/heartbeat` | Publish | Device health status (every 30s) |
 
 ## Command Format
@@ -147,7 +148,7 @@ MQTT connected
 Subscribed to: tankctl/tank1/command
 TankCtl Device Ready
 Heartbeat sent
-Telemetry: temp=24.6°C
+Telemetry: temp=24.6°C tds=180.3ppm
 ```
 
 ## Firmware Size

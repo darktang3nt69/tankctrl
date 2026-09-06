@@ -350,9 +350,9 @@ class LightScheduleResponse(BaseModel):
 class WaterScheduleRequest(BaseModel):
     """Request to create/update water change schedule."""
 
-    schedule_type: Literal["weekly", "custom"] = Field(
+    schedule_type: Literal["weekly", "custom", "interval"] = Field(
         ...,
-        description="Type of schedule: weekly recurring or custom date"
+        description="Type of schedule: weekly recurring, custom date, or every-N-days interval"
     )
     days_of_week: Optional[list[int]] = Field(
         None,
@@ -363,6 +363,11 @@ class WaterScheduleRequest(BaseModel):
         pattern=r"^\d{4}-\d{2}-\d{2}$",
         description="Date for custom schedules (YYYY-MM-DD)"
     )
+    interval_days: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Cadence in days for interval schedules (e.g. 14 for every two weeks)"
+    )
     schedule_time: str = Field(
         "12:00",
         pattern=r"^([01]\d|2[0-3]):([0-5]\d)$",
@@ -371,6 +376,10 @@ class WaterScheduleRequest(BaseModel):
     notes: Optional[str] = Field(
         None,
         description="Notes about the water change"
+    )
+    completed: bool = Field(
+        False,
+        description="Whether this water change has been carried out"
     )
     enabled: bool = Field(
         True,
@@ -388,6 +397,11 @@ class WaterScheduleRequest(BaseModel):
         True,
         description="Send reminder at the exact time of scheduled water change"
     )
+    ph: Optional[float] = Field(None, description="pH reading recorded when closing out the water change")
+    ammonia: Optional[float] = Field(None, description="Ammonia reading (ppm)")
+    nitrite: Optional[float] = Field(None, description="Nitrite reading (ppm)")
+    nitrate: Optional[float] = Field(None, description="Nitrate reading (ppm)")
+    tds: Optional[float] = Field(None, description="TDS reading (ppm)")
 
     @model_validator(mode='after')
     def validate_schedule_type(self):
@@ -399,6 +413,8 @@ class WaterScheduleRequest(BaseModel):
                     raise ValueError("days_of_week values must be 0-6")
         if self.schedule_type == "custom" and self.schedule_date is None:
             raise ValueError("schedule_date required for custom schedule")
+        if self.schedule_type == "interval" and self.interval_days is None:
+            raise ValueError("interval_days required for interval schedule")
         return self
 
 
@@ -407,9 +423,10 @@ class WaterScheduleResponse(BaseModel):
 
     id: int
     device_id: str
-    schedule_type: Literal["weekly", "custom"]
+    schedule_type: Literal["weekly", "custom", "interval"]
     days_of_week: Optional[list[int]] = None
     schedule_date: Optional[str] = None
+    interval_days: Optional[int] = None
     schedule_time: str
     notes: Optional[str] = None
     completed: bool = False
@@ -417,6 +434,11 @@ class WaterScheduleResponse(BaseModel):
     notify_24h: bool = True
     notify_1h: bool = True
     notify_on_time: bool = True
+    ph: Optional[float] = None
+    ammonia: Optional[float] = None
+    nitrite: Optional[float] = None
+    nitrate: Optional[float] = None
+    tds: Optional[float] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

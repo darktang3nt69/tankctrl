@@ -167,6 +167,76 @@ class TestReminderServiceCustom:
         assert len(due) == 0
 
 
+class TestReminderServiceInterval:
+    """Test reminder logic for interval (every-N-days) water schedules."""
+
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_should_fire_on_due_date(self, mock_now, reminder_service, app_tz):
+        """Interval schedule fires interval_days after created_at, at scheduled time."""
+        schedule = Mock(spec=WaterScheduleModel)
+        schedule.id = 701
+        schedule.device_id = "tank1"
+        schedule.schedule_type = "interval"
+        schedule.interval_days = 14
+        schedule.days_of_week = None
+        schedule.schedule_date = None
+        schedule.schedule_time = time_type(9, 0)
+        schedule.created_at = datetime(2026, 3, 1, 9, 0, 0)
+        schedule.enabled = True
+        schedule.completed = False
+        schedule.notify_24h = True
+        schedule.notify_1h = True
+        schedule.notify_on_time = True
+
+        # 14 days after created_at (2026-03-01) is 2026-03-15
+        mock_now.return_value = datetime(2026, 3, 15, 9, 0, 0, tzinfo=app_tz)
+        due = reminder_service.get_due_reminders([schedule])
+        assert any(r == (schedule, "on_time") for r in due)
+
+    @patch('src.services.water_schedule_reminder_service.now_in_app_timezone')
+    def test_should_not_fire_before_due_date(self, mock_now, reminder_service, app_tz):
+        """Interval schedule does not fire before interval_days have elapsed."""
+        schedule = Mock(spec=WaterScheduleModel)
+        schedule.id = 702
+        schedule.device_id = "tank1"
+        schedule.schedule_type = "interval"
+        schedule.interval_days = 14
+        schedule.days_of_week = None
+        schedule.schedule_date = None
+        schedule.schedule_time = time_type(9, 0)
+        schedule.created_at = datetime(2026, 3, 1, 9, 0, 0)
+        schedule.enabled = True
+        schedule.completed = False
+        schedule.notify_24h = True
+        schedule.notify_1h = True
+        schedule.notify_on_time = True
+
+        # 7 days after created_at — not due yet
+        mock_now.return_value = datetime(2026, 3, 8, 9, 0, 0, tzinfo=app_tz)
+        due = reminder_service.get_due_reminders([schedule])
+        assert len(due) == 0
+
+    def test_should_not_fire_without_interval_days(self, reminder_service, app_tz):
+        """Interval schedule with no interval_days set never fires."""
+        schedule = Mock(spec=WaterScheduleModel)
+        schedule.id = 703
+        schedule.device_id = "tank1"
+        schedule.schedule_type = "interval"
+        schedule.interval_days = None
+        schedule.days_of_week = None
+        schedule.schedule_date = None
+        schedule.schedule_time = time_type(9, 0)
+        schedule.created_at = datetime(2026, 3, 1, 9, 0, 0)
+        schedule.enabled = True
+        schedule.completed = False
+        schedule.notify_24h = True
+        schedule.notify_1h = True
+        schedule.notify_on_time = True
+
+        due = reminder_service.get_due_reminders([schedule])
+        assert len(due) == 0
+
+
 class TestReminderServiceDedup:
     """Test deduplication logic — prevents double-sending within 2 hours."""
 
@@ -442,6 +512,80 @@ class TestDeviceServiceUpdate:
         result = service.update_water_schedule("tank1", 999, {"enabled": False})
 
         assert result is None
+
+    def test_update_completed_flag(self):
+        """Can mark a schedule completed via update (closing out a water change)."""
+        mock_session = Mock()
+        schedule = Mock(spec=WaterScheduleModel)
+        schedule.id = 303
+        schedule.device_id = "tank1"
+        schedule.completed = False
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = schedule
+
+        service = DeviceService(mock_session)
+        updated = service.update_water_schedule("tank1", 303, {"completed": True})
+
+        assert updated is not None
+        assert updated.completed is True
+
+    def test_update_water_quality_params(self):
+        """Can record pH/ammonia/nitrite/nitrate/TDS when closing out a water change."""
+        mock_session = Mock()
+        schedule = Mock(spec=WaterScheduleModel)
+        schedule.id = 304
+        schedule.device_id = "tank1"
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = schedule
+
+        service = DeviceService(mock_session)
+        updated = service.update_water_schedule("tank1", 304, {
+            "ph": 7.2, "ammonia": 0.1, "nitrite": 0.0, "nitrate": 10.5, "tds": 250.0,
+        })
+
+        assert updated is not None
+        assert updated.ph == 7.2
+        assert updated.ammonia == 0.1
+        assert updated.nitrite == 0.0
+        assert updated.nitrate == 10.5
+        assert updated.tds == 250.0
+
+    def test_update_interval_days(self):
+        """Can switch a schedule to interval cadence and set interval_days."""
+        mock_session = Mock()
+        schedule = Mock(spec=WaterScheduleModel)
+        schedule.id = 305
+        schedule.device_id = "tank1"
+        schedule.schedule_type = "weekly"
+
+        mock_session.query.return_value.filter_by.return_value.first.return_value = schedule
+
+        service = DeviceService(mock_session)
+        updated = service.update_water_schedule("tank1", 305, {
+            "schedule_type": "interval", "interval_days": 21,
+        })
+
+        assert updated is not None
+        assert updated.schedule_type == "interval"
+        assert updated.interval_days == 21
+
+
+class TestDeviceServiceCreate:
+    """Test DeviceService.create_water_schedule() method."""
+
+    def test_create_interval_schedule(self):
+        """Can create an interval-cadence schedule with interval_days set."""
+        mock_session = Mock()
+        service = DeviceService(mock_session)
+
+        schedule = service.create_water_schedule("tank1", {
+            "schedule_type": "interval",
+            "interval_days": 14,
+            "schedule_time": "09:00",
+        })
+
+        assert schedule.schedule_type == "interval"
+        assert schedule.interval_days == 14
 
 
 class TestDeviceServiceDetail:

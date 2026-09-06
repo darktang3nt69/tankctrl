@@ -40,23 +40,34 @@ class WaterScheduleRepository:
         if schedule_data.get("days_of_week"):
             days_of_week_str = ",".join(str(d) for d in schedule_data["days_of_week"])
 
-        # For weekly schedules, clear schedule_date. For custom, clear days_of_week.
+        # Each schedule type only uses its own cadence fields; clear the others.
         schedule_date = None
+        interval_days = None
         if schedule_data["schedule_type"] == "custom":
             schedule_date = schedule_data.get("schedule_date")
-            days_of_week_str = None  # Custom schedules don't use days_of_week
+            days_of_week_str = None
+        elif schedule_data["schedule_type"] == "interval":
+            interval_days = schedule_data.get("interval_days")
+            days_of_week_str = None
 
         new_schedule = WaterScheduleModel(
             device_id=device_id,
             schedule_type=schedule_data["schedule_type"],
             days_of_week=days_of_week_str,
             schedule_date=schedule_date,
+            interval_days=interval_days,
             schedule_time=schedule_time,
             notes=schedule_data.get("notes"),
+            completed=schedule_data.get("completed", False),
             enabled=schedule_data.get("enabled", True),
             notify_24h=schedule_data.get("notify_24h", True),
             notify_1h=schedule_data.get("notify_1h", True),
             notify_on_time=schedule_data.get("notify_on_time", True),
+            ph=schedule_data.get("ph"),
+            ammonia=schedule_data.get("ammonia"),
+            nitrite=schedule_data.get("nitrite"),
+            nitrate=schedule_data.get("nitrate"),
+            tds=schedule_data.get("tds"),
         )
         self.session.add(new_schedule)
         self.session.commit()
@@ -102,15 +113,24 @@ class WaterScheduleRepository:
                 schedule.days_of_week = None
         if "schedule_date" in schedule_data:
             schedule.schedule_date = schedule_data["schedule_date"]
+        if "interval_days" in schedule_data:
+            schedule.interval_days = schedule_data["interval_days"]
 
         # Ensure type-specific fields are cleared
         if schedule.schedule_type == "weekly":
             schedule.schedule_date = None
+            schedule.interval_days = None
         elif schedule.schedule_type == "custom":
+            schedule.days_of_week = None
+            schedule.interval_days = None
+        elif schedule.schedule_type == "interval":
+            schedule.schedule_date = None
             schedule.days_of_week = None
 
         if "notes" in schedule_data:
             schedule.notes = schedule_data["notes"]
+        if "completed" in schedule_data:
+            schedule.completed = schedule_data["completed"]
         if "enabled" in schedule_data:
             schedule.enabled = schedule_data["enabled"]
 
@@ -121,6 +141,11 @@ class WaterScheduleRepository:
             schedule.notify_1h = schedule_data["notify_1h"]
         if "notify_on_time" in schedule_data:
             schedule.notify_on_time = schedule_data["notify_on_time"]
+
+        # Water-quality readings, recorded optionally when closing out a water change
+        for field in ("ph", "ammonia", "nitrite", "nitrate", "tds"):
+            if field in schedule_data:
+                setattr(schedule, field, schedule_data[field])
 
         self.session.commit()
         logger.debug("water_schedule_updated", device_id=device_id, schedule_id=schedule_id)

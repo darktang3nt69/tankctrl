@@ -284,16 +284,20 @@ sync, or a fresh schedule push).
 **Format**:
 ```json
 {
-  "temperature": <float>
+  "temperature": <float>,
+  "tds": <float, optional, ppm - omitted if the probe is unavailable>
 }
 ```
 
 **Example**:
 ```json
 {
-  "temperature": 24.5
+  "temperature": 24.5,
+  "tds": 180.3
 }
 ```
+
+`tds` uses a provisional linear ADC→ppm conversion (`TDS_CALIBRATION_FACTOR` in firmware) pending calibration against a reference solution for the actual probe hardware.
 
 **Published Every**: 10 seconds
 
@@ -315,6 +319,7 @@ sync, or a fresh schedule push).
 **Examples**:
 ```json
 {"event": "warning", "code": "sensor_unavailable", "message": "Temperature sensor not connected"}
+{"event": "warning", "code": "tds_sensor_unavailable", "message": "TDS sensor not connected or reading invalid"}
 ```
 
 ---
@@ -503,7 +508,7 @@ mosquitto_sub -h 192.168.1.100 -t "tankctl/POND-ESP32/#" -v
 ```
 tankctl/POND-ESP32/command {"command":"set_light","value":"on","version":1}
 tankctl/POND-ESP32/reported {"light":"on","pump":"off"}
-tankctl/POND-ESP32/telemetry {"temperature":24.5}
+tankctl/POND-ESP32/telemetry {"temperature":24.5,"tds":180.3}
 tankctl/POND-ESP32/heartbeat {"status":"online",...}
 ```
 
