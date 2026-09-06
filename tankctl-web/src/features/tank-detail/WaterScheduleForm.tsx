@@ -7,8 +7,16 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from '../../components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
 import { Textarea } from '../../components/ui/textarea'
+import { waterQualityStatus } from '../../lib/waterQuality'
+import { cn } from '../../lib/utils'
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+const DOT_CLASS: Record<'ok' | 'warn' | 'danger', string> = {
+  ok: 'bg-[var(--safe)]',
+  warn: 'bg-[var(--warn)]',
+  danger: 'bg-[var(--danger)]',
+}
 
 const waterScheduleSchema = z
   .object({
@@ -45,11 +53,17 @@ export function WaterScheduleForm({
   submitting,
   onSubmit,
   onCancel,
+  quickLog = false,
 }: {
   initial: WaterScheduleWrite
   submitting: boolean
   onSubmit: (body: WaterScheduleWrite) => void
   onCancel: () => void
+  /** Skips the cadence picker entirely — a water change can be logged as a
+   * one-off record without ever choosing a recurring schedule. `initial`
+   * must already carry `schedule_type: 'custom'`, `schedule_date`, and
+   * `completed: true` (see WaterTab's "Log a change now" defaults). */
+  quickLog?: boolean
 }) {
   const form = useForm<WaterScheduleFormValues>({
     resolver: zodResolver(waterScheduleSchema),
@@ -68,29 +82,47 @@ export function WaterScheduleForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit((values) => onSubmit(values as WaterScheduleWrite))} className="space-y-4 rounded-lg border bg-muted/40 p-5">
-        <FormField
-          control={form.control}
-          name="schedule_type"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Cadence</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="weekly">Weekly (recurring)</SelectItem>
-                  <SelectItem value="custom">One-off date</SelectItem>
-                  <SelectItem value="interval">Every N days</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormItem>
-          )}
-        />
+        {!quickLog && (
+          <FormField
+            control={form.control}
+            name="schedule_type"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Cadence</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="weekly">Weekly (recurring)</SelectItem>
+                    <SelectItem value="custom">One-off date</SelectItem>
+                    <SelectItem value="interval">Every N days</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+        )}
 
-        {scheduleType === 'weekly' && (
+        {quickLog && (
+          <FormField
+            control={form.control}
+            name="schedule_date"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Date</FormLabel>
+                <FormControl>
+                  <Input type="date" value={field.value ?? ''} onChange={field.onChange} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
+        {!quickLog && scheduleType === 'weekly' && (
           <FormItem>
             <FormLabel>Days of week</FormLabel>
             <div className="flex flex-wrap gap-1.5">
@@ -110,7 +142,7 @@ export function WaterScheduleForm({
           </FormItem>
         )}
 
-        {scheduleType === 'custom' && (
+        {!quickLog && scheduleType === 'custom' && (
           <FormField
             control={form.control}
             name="schedule_date"
@@ -126,7 +158,7 @@ export function WaterScheduleForm({
           />
         )}
 
-        {scheduleType === 'interval' && (
+        {!quickLog && scheduleType === 'interval' && (
           <FormField
             control={form.control}
             name="interval_days"
@@ -169,59 +201,70 @@ export function WaterScheduleForm({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="enabled"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-center gap-2 space-y-0">
-              <FormControl>
-                <input type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} className="h-4 w-4" />
-              </FormControl>
-              <FormLabel className="!mt-0">Reminders enabled</FormLabel>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="completed"
-          render={({ field }) => (
-            <FormItem>
-              <div className="flex flex-row items-center gap-2">
+        {!quickLog && (
+          <FormField
+            control={form.control}
+            name="enabled"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-center gap-2 space-y-0">
                 <FormControl>
                   <input type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} className="h-4 w-4" />
                 </FormControl>
-                <FormLabel className="!mt-0">Completed</FormLabel>
-              </div>
-              <FormDescription>Check this once the water change has actually happened.</FormDescription>
-            </FormItem>
-          )}
-        />
+                <FormLabel className="!mt-0">Reminders enabled</FormLabel>
+              </FormItem>
+            )}
+          />
+        )}
 
-        {completed && (
+        {!quickLog && (
+          <FormField
+            control={form.control}
+            name="completed"
+            render={({ field }) => (
+              <FormItem>
+                <div className="flex flex-row items-center gap-2">
+                  <FormControl>
+                    <input type="checkbox" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} className="h-4 w-4" />
+                  </FormControl>
+                  <FormLabel className="!mt-0">Completed</FormLabel>
+                </div>
+                <FormDescription>Check this once the water change has actually happened.</FormDescription>
+              </FormItem>
+            )}
+          />
+        )}
+
+        {(quickLog || completed) && (
           <>
             <p className="text-sm text-muted-foreground">Water-quality readings (optional)</p>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              {(['ph', 'ammonia', 'nitrite', 'nitrate', 'tds'] as const).map((key) => (
-                <FormField
-                  key={key}
-                  control={form.control}
-                  name={key}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="capitalize">{key === 'ph' ? 'pH' : key === 'tds' ? 'TDS' : key}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step={key === 'ammonia' || key === 'nitrite' ? '0.01' : key === 'tds' ? '1' : '0.1'}
-                          value={field.value ?? ''}
-                          onChange={(e) => field.onChange(e.target.value === '' ? null : e.target.value)}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              ))}
+              {(['ph', 'ammonia', 'nitrite', 'nitrate', 'tds'] as const).map((key) => {
+                const value = form.watch(key)
+                const status = waterQualityStatus(key, value)
+                return (
+                  <FormField
+                    key={key}
+                    control={form.control}
+                    name={key}
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-center gap-1.5">
+                          <FormLabel className="capitalize">{key === 'ph' ? 'pH' : key === 'tds' ? 'TDS' : key}</FormLabel>
+                          {status && <span className={cn('h-1.5 w-1.5 rounded-full', DOT_CLASS[status])} aria-hidden="true" />}
+                        </div>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step={key === 'ammonia' || key === 'nitrite' ? '0.01' : key === 'tds' ? '1' : '0.1'}
+                            value={field.value ?? ''}
+                            onChange={(e) => field.onChange(e.target.value === '' ? null : e.target.value)}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                )
+              })}
             </div>
           </>
         )}

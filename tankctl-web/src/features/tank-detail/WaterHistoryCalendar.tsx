@@ -1,13 +1,23 @@
 import { useMemo, useState } from 'react'
 import { Calendar } from '../../components/ui/calendar'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table'
+import { EmptyState } from '../../components/EmptyState'
 import type { WaterSchedule } from '../../api/types'
 import { toLocalDateKey } from '../../lib/date'
+import { waterQualityStatus } from '../../lib/waterQuality'
+import { cn } from '../../lib/utils'
 
 function cadenceLabel(s: WaterSchedule): string {
   if (s.schedule_type === 'custom') return s.schedule_date ?? 'one-off'
   if (s.schedule_type === 'interval') return `every ${s.interval_days} days`
   const days = (s.days_of_week ?? []).map((d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d]).join(', ')
   return `weekly · ${days || '—'}`
+}
+
+const DOT_CLASS: Record<'ok' | 'warn' | 'danger', string> = {
+  ok: 'bg-[var(--safe)]',
+  warn: 'bg-[var(--warn)]',
+  danger: 'bg-[var(--danger)]',
 }
 
 /** History covers completed one-off entries (logged) AND upcoming
@@ -73,57 +83,119 @@ export function WaterHistoryCalendar({ schedules }: { schedules: WaterSchedule[]
   const scheduledEntries = selectedKey ? (scheduledByDate.get(selectedKey) ?? []) : []
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <Calendar
-        mode="single"
-        month={month}
-        onMonthChange={setMonth}
-        selected={selectedDate}
-        onSelect={setSelectedDate}
-        modifiers={{ logged: loggedDates, scheduled: scheduledDates }}
-        modifiersClassNames={{
-          logged:
-            "relative after:absolute after:bottom-0.5 after:left-1/2 after:h-1 after:w-1 after:-translate-x-1/2 after:rounded-full after:bg-primary after:content-['']",
-          scheduled:
-            "relative before:absolute before:top-0.5 before:left-1/2 before:h-1 before:w-1 before:-translate-x-1/2 before:rounded-full before:border before:border-[var(--warn)] before:content-['']",
-        }}
-        className="max-w-[280px] rounded-md border p-2"
-      />
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary" /> Logged
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full border border-[var(--warn)]" /> Scheduled
-        </span>
-      </div>
-      {(loggedEntries.length > 0 || scheduledEntries.length > 0) && (
-        <div className="w-full space-y-3 border-t pt-3 text-sm">
-          {loggedEntries.map((entry) => (
-            <div key={entry.id}>
-              <p className="font-mono font-medium">{entry.schedule_date}</p>
-              {entry.notes && <p>{entry.notes}</p>}
-              <p className="font-mono text-xs text-muted-foreground">
-                {[
-                  entry.ph !== null && `pH ${entry.ph}`,
-                  entry.ammonia !== null && `NH3 ${entry.ammonia}`,
-                  entry.nitrite !== null && `NO2 ${entry.nitrite}`,
-                  entry.nitrate !== null && `NO3 ${entry.nitrate}`,
-                  entry.tds !== null && `TDS ${entry.tds}`,
-                ]
-                  .filter(Boolean)
-                  .join(' · ') || 'No readings recorded'}
-              </p>
-            </div>
-          ))}
-          {scheduledEntries.map((s) => (
-            <div key={s.id}>
-              <p className="font-medium">{cadenceLabel(s)}</p>
-              <p className="font-mono text-xs text-muted-foreground">{s.schedule_time}</p>
-            </div>
-          ))}
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+      {/* Left column: Calendar + legend */}
+      <div className="flex flex-col gap-3 sm:w-[280px] sm:shrink-0">
+        <Calendar
+          mode="single"
+          month={month}
+          onMonthChange={setMonth}
+          selected={selectedDate}
+          onSelect={setSelectedDate}
+          modifiers={{ logged: loggedDates, scheduled: scheduledDates }}
+          modifiersClassNames={{
+            logged:
+              "relative after:absolute after:bottom-0.5 after:left-1/2 after:h-1 after:w-1 after:-translate-x-1/2 after:rounded-full after:bg-primary after:content-['']",
+            scheduled:
+              "relative before:absolute before:top-0.5 before:left-1/2 before:h-1 before:w-1 before:-translate-x-1/2 before:rounded-full before:border before:border-[var(--warn)] before:content-['']",
+          }}
+          className="rounded-md border p-2"
+        />
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary" /> Logged
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full border border-[var(--warn)]" /> Scheduled
+          </span>
         </div>
-      )}
+      </div>
+
+      {/* Right column: Readings table or empty state */}
+      <div className="flex-1">
+        {selectedDate ? (
+          <>
+            {loggedEntries.length > 0 && (
+              <div className="space-y-4">
+                {loggedEntries.map((entry) => (
+                  <div key={entry.id} className="rounded-lg border bg-card p-4">
+                    {entry.notes && (
+                      <div className="mb-3">
+                        <p className="text-sm font-medium text-foreground">{entry.notes}</p>
+                      </div>
+                    )}
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Parameter</TableHead>
+                          <TableHead>Value</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {[
+                          { key: 'ph' as const, label: 'pH', value: entry.ph },
+                          { key: 'ammonia' as const, label: 'Ammonia', value: entry.ammonia },
+                          { key: 'nitrite' as const, label: 'Nitrite', value: entry.nitrite },
+                          { key: 'nitrate' as const, label: 'Nitrate', value: entry.nitrate },
+                          { key: 'tds' as const, label: 'TDS', value: entry.tds },
+                        ]
+                          .filter(({ value }) => value !== null)
+                          .map(({ key, label, value }) => {
+                            const status = waterQualityStatus(key, value)
+                            return (
+                              <TableRow key={key}>
+                                <TableCell className="font-medium">{label}</TableCell>
+                                <TableCell>{value}</TableCell>
+                                <TableCell>
+                                  {status ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className={cn('h-1.5 w-1.5 rounded-full', DOT_CLASS[status])} aria-hidden="true" />
+                                      <span className="text-xs capitalize text-muted-foreground">{status === 'ok' ? 'safe' : status}</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ))}
+                {scheduledEntries.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">Upcoming schedules for this day:</p>
+                    {scheduledEntries.map((s) => (
+                      <div key={s.id} className="rounded-lg border bg-muted/50 p-3 text-sm">
+                        <p className="font-medium">{cadenceLabel(s)}</p>
+                        <p className="text-xs text-muted-foreground">{s.schedule_time}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {loggedEntries.length === 0 && scheduledEntries.length === 0 && (
+              <EmptyState title="No data for this day" description="No water changes logged and no schedules planned." />
+            )}
+            {loggedEntries.length === 0 && scheduledEntries.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Scheduled for this day:</p>
+                {scheduledEntries.map((s) => (
+                  <div key={s.id} className="rounded-lg border bg-card p-3 text-sm">
+                    <p className="font-medium">{cadenceLabel(s)}</p>
+                    <p className="text-xs text-muted-foreground">{s.schedule_time}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <EmptyState title="Select a day" description="Click a date on the calendar to view water-quality readings and schedules." />
+        )}
+      </div>
     </div>
   )
 }

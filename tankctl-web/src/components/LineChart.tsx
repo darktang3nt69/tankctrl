@@ -1,8 +1,17 @@
-import { useMemo, useRef, useState } from 'react'
-import { motion } from 'motion/react'
+import { useId, useState } from 'react'
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import { TrendingUp } from 'lucide-react'
 import { Button } from './ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+import { formatDate, formatTime } from '../lib/date'
 
 export interface ChartPoint {
   t: Date
@@ -20,167 +29,95 @@ interface LineChartProps {
   height?: number
 }
 
-const PAD_L = 42
-const PAD_R = 14
-const PAD_T = 14
-const PAD_B = 24
-const WIDTH = 720
-
-function formatTime(d: Date) {
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-function formatDate(d: Date) {
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+function tickLabel(d: Date, dayTicks?: boolean) {
+  return dayTicks ? formatDate(d) : formatTime(d)
 }
 
+function ChartTooltip({
+  active,
+  payload,
+  unit,
+  dayTicks,
+}: {
+  active?: boolean
+  payload?: { payload: ChartPoint }[]
+  unit: string
+  dayTicks?: boolean
+}) {
+  if (!active || !payload?.length) return null
+  const point = payload[0].payload
+  return (
+    <div className="rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md">
+      <div className="font-mono text-muted-foreground">{tickLabel(point.t, dayTicks)}</div>
+      <div className="font-mono font-semibold">
+        {point.value.toFixed(1)}
+        {unit}
+      </div>
+    </div>
+  )
+}
+
+/** The accessible, detailed chart (Tank Detail) — Recharts-based for real
+ * tooltips/gradient fills, pre-styled to the existing --series-* tokens.
+ * TankCard's Sparkline stays hand-rolled SVG (glance-level, not this). */
 export function LineChart({ data, unit = '', color, fillColor, stale, dayTicks, ariaLabel, height = 200 }: LineChartProps) {
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const [showTable, setShowTable] = useState(false)
-  const svgRef = useRef<SVGSVGElement | null>(null)
-
-  const plotW = WIDTH - PAD_L - PAD_R
-  const plotH = height - PAD_T - PAD_B
-
-  const { path, areaPath, x, y, gridSteps } = useMemo(() => {
-    if (data.length === 0) {
-      return { path: '', areaPath: '', x: () => 0, y: () => 0, gridSteps: [] as number[] }
-    }
-    const values = data.map((d) => d.value)
-    let min = Math.min(...values)
-    let max = Math.max(...values)
-    const padValue = (max - min) * 0.15 || 1
-    min -= padValue
-    max += padValue
-
-    const xScale = (i: number) => PAD_L + (data.length === 1 ? 0 : (i / (data.length - 1)) * plotW)
-    const yScale = (v: number) => PAD_T + plotH - ((v - min) / (max - min)) * plotH
-
-    let d0 = `M${xScale(0)},${yScale(data[0].value)}`
-    for (let i = 1; i < data.length; i++) d0 += ` L${xScale(i)},${yScale(data[i].value)}`
-    const area = `${d0} L${xScale(data.length - 1)},${PAD_T + plotH} L${xScale(0)},${PAD_T + plotH} Z`
-
-    const steps = 4
-    const grid = Array.from({ length: steps + 1 }, (_, s) => min + (max - min) * (s / steps))
-
-    return { path: d0, areaPath: area, x: xScale, y: yScale, gridSteps: grid }
-  }, [data, plotH, plotW])
+  const gradientId = useId()
 
   if (data.length === 0) {
-    return <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">No data yet</div>
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <TrendingUp className="size-6 opacity-40" />
+        <span>No data yet</span>
+      </div>
+    )
   }
 
-  const lastIdx = data.length - 1
-  const activeIdx = hoverIdx ?? lastIdx
-  const active = data[activeIdx]
-
-  function handleMove(evt: React.PointerEvent<SVGRectElement>) {
-    const svg = svgRef.current
-    if (!svg) return
-    const rect = svg.getBoundingClientRect()
-    const px = ((evt.clientX - rect.left) * WIDTH) / rect.width
-    const idx = Math.max(0, Math.min(lastIdx, Math.round(((px - PAD_L) / plotW) * lastIdx)))
-    setHoverIdx(idx)
-  }
-
-  function tooltipText(idx: number) {
-    const p = data[idx]
-    return `${dayTicks ? formatDate(p.t) : formatTime(p.t)} · ${p.value.toFixed(1)}${unit}`
-  }
+  const last = data[data.length - 1]
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="relative">
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${WIDTH} ${height}`}
-          role="img"
-          aria-label={ariaLabel}
-          className="block h-auto w-full cursor-crosshair"
-        >
-          {gridSteps.map((v, i) => (
-            <g key={i}>
-              <line
-                x1={PAD_L}
-                x2={WIDTH - PAD_R}
-                y1={y(v)}
-                y2={y(v)}
-                stroke="var(--border)"
-                strokeWidth={1}
-                strokeDasharray="2 3"
-              />
-              <text x={PAD_L - 8} y={y(v) + 3.5} textAnchor="end" className="fill-muted-foreground font-mono text-[10px]">
-                {v.toFixed(0)}
-                {unit}
-              </text>
-            </g>
-          ))}
-          <motion.path
-            d={areaPath}
-            fill={fillColor}
-            stroke="none"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+    <div className="flex flex-col gap-1.5" role="img" aria-label={ariaLabel}>
+      <ResponsiveContainer width="100%" height={height}>
+        <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={fillColor} stopOpacity={1} />
+              <stop offset="100%" stopColor={fillColor} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="2 3" stroke="var(--border)" vertical={false} />
+          <XAxis
+            dataKey="t"
+            tickFormatter={(t: Date) => tickLabel(t, dayTicks)}
+            tick={{ fontSize: 10, fontFamily: 'var(--font-mono)', fill: 'var(--muted-foreground)' }}
+            axisLine={{ stroke: 'var(--border)' }}
+            tickLine={false}
+            minTickGap={40}
           />
-          <motion.path
-            d={path}
-            fill="none"
-            stroke={color}
+          <YAxis
+            tickFormatter={(v: number) => `${v.toFixed(0)}${unit}`}
+            tick={{ fontSize: 10, fontFamily: 'var(--font-mono)', fill: 'var(--muted-foreground)' }}
+            axisLine={false}
+            tickLine={false}
+            width={42}
+          />
+          <Tooltip content={<ChartTooltip unit={unit} dayTicks={dayTicks} />} />
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke={stale ? 'var(--muted-foreground)' : color}
             strokeWidth={2}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            fill={`url(#${gradientId})`}
+            dot={false}
+            activeDot={{ r: 5, stroke: 'var(--card)', strokeWidth: 2 }}
+            isAnimationActive={true}
           />
-          {[0, 1, 2, 3, 4].map((tick) => {
-            const idx = Math.round(lastIdx * (tick / 4))
-            return (
-              <text
-                key={tick}
-                x={x(idx)}
-                y={height - 8}
-                textAnchor={tick === 0 ? 'start' : tick === 4 ? 'end' : 'middle'}
-                className="fill-muted-foreground font-mono text-[10px]"
-              >
-                {dayTicks ? formatDate(data[idx].t) : formatTime(data[idx].t)}
-              </text>
-            )
-          })}
-          <circle cx={x(lastIdx)} cy={y(data[lastIdx].value)} r={7} fill="var(--card)" />
-          <circle cx={x(lastIdx)} cy={y(data[lastIdx].value)} r={5} fill={stale ? 'var(--muted-foreground)' : color} />
-          <Tooltip open={hoverIdx !== null}>
-            <TooltipTrigger asChild>
-              <circle
-                cx={x(hoverIdx ?? lastIdx)}
-                cy={y(data[hoverIdx ?? lastIdx].value)}
-                r={5}
-                fill={color}
-                stroke="var(--card)"
-                strokeWidth={2}
-                opacity={hoverIdx === null ? 0 : 1}
-              />
-            </TooltipTrigger>
-            <TooltipContent>{tooltipText(hoverIdx ?? lastIdx)}</TooltipContent>
-          </Tooltip>
-          {hoverIdx !== null && (
-            <line x1={x(hoverIdx)} x2={x(hoverIdx)} y1={PAD_T} y2={PAD_T + plotH} stroke="var(--muted-foreground)" strokeWidth={1} />
-          )}
-          <rect
-            x={PAD_L}
-            y={PAD_T}
-            width={plotW}
-            height={plotH}
-            fill="transparent"
-            onPointerMove={handleMove}
-            onPointerLeave={() => setHoverIdx(null)}
-          />
-        </svg>
-        <div className="mt-1 font-mono text-xs text-muted-foreground">
-          {dayTicks ? formatDate(active.t) : formatTime(active.t)} · {active.value.toFixed(1)}
-          {unit}
-          {stale && activeIdx === lastIdx && <span className="ml-1 font-semibold text-[var(--warn)]"> · stale</span>}
-        </div>
+        </AreaChart>
+      </ResponsiveContainer>
+      <div className="font-mono text-xs text-muted-foreground">
+        {tickLabel(last.t, dayTicks)} · {last.value.toFixed(1)}
+        {unit}
+        {stale && <span className="ml-1 font-semibold text-[var(--warn)]"> · stale</span>}
       </div>
       <Button type="button" variant="ghost" size="sm" className="self-start text-xs underline decoration-dotted" onClick={() => setShowTable((s) => !s)}>
         {showTable ? 'Hide table' : 'View as table'}

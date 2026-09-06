@@ -5,6 +5,7 @@ import { useEvents } from '../api/events'
 import { TankCard } from '../components/TankCard'
 import { SearchFilterBar, type SortKey, type StatusFilter } from '../components/SearchFilterBar'
 import { EmptyState } from '../components/EmptyState'
+import { RegisterTankModal } from '../components/RegisterTankModal'
 
 export function Overview() {
   const { data: devices, isLoading, isError } = useDevices()
@@ -54,7 +55,10 @@ export function Overview() {
 
   return (
     <div>
-      <h1 className="mb-5 text-2xl font-bold tracking-tight">Tanks</h1>
+      <div className="mb-5 flex items-center justify-between">
+        <h1 className="text-2xl font-bold tracking-tight">Tanks</h1>
+        <RegisterTankModal />
+      </div>
       <SearchFilterBar
         search={search}
         onSearchChange={setSearch}

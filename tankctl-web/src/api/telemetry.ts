@@ -2,7 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from './client'
 import type { HourlySummaryResponse, TelemetryResponse } from './types'
 
-export type ChartRange = 'live' | '7d' | '30d'
+export type ChartRange = 'live' | '7d' | '30d' | 'custom'
+
+export interface DateRange {
+  from: Date
+  to: Date
+}
 
 /** Raw telemetry — used for the live view's initial window on mount. */
 export function useRawTelemetry(deviceId: string, hours: number, enabled: boolean) {
@@ -14,11 +19,23 @@ export function useRawTelemetry(deviceId: string, hours: number, enabled: boolea
   })
 }
 
-/** Hourly rollup — used for the 7d/30d ranges (real TimescaleDB continuous aggregate). */
-export function useHourlySummary(deviceId: string, hours: number, enabled: boolean) {
+/** Hourly rollup — used for the 7d/30d/custom ranges (real TimescaleDB continuous aggregate).
+ * Pass `customRange` for arbitrary from/to exploration; it takes precedence over `hours`. */
+export function useHourlySummary(
+  deviceId: string,
+  hours: number,
+  enabled: boolean,
+  customRange?: DateRange,
+) {
+  const rangeKey = customRange ? `${customRange.from.toISOString()}:${customRange.to.toISOString()}` : hours
   return useQuery({
-    queryKey: ['device', deviceId, 'telemetry', 'hourly', hours],
-    queryFn: () => api.get<HourlySummaryResponse>(`/devices/${deviceId}/telemetry/hourly/summary?hours=${hours}`),
+    queryKey: ['device', deviceId, 'telemetry', 'hourly', rangeKey],
+    queryFn: () => {
+      const params = customRange
+        ? `start=${customRange.from.toISOString()}&end=${customRange.to.toISOString()}`
+        : `hours=${hours}`
+      return api.get<HourlySummaryResponse>(`/devices/${deviceId}/telemetry/hourly/summary?${params}`)
+    },
     enabled: Boolean(deviceId) && enabled,
   })
 }
@@ -38,6 +55,7 @@ export function useSparkline(deviceId: string) {
 export function rangeToHours(range: ChartRange): number {
   if (range === '7d') return 7 * 24
   if (range === '30d') return 30 * 24
+  if (range === 'custom') return 24 // unused when a customRange {from,to} is supplied
   return 1 // 'live': raw telemetry seed window before the WS tail takes over
 }
 

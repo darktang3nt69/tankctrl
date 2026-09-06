@@ -1,5 +1,7 @@
 export type DeviceStatus = 'online' | 'offline' | 'time_unknown'
 
+export type RelayType = 'light' | 'pump' | 'co2' | 'temp_sensor' | 'servo'
+
 export interface Device {
   device_id: string
   device_name: string | null
@@ -13,6 +15,7 @@ export interface Device {
   uptime_ms: number | null
   rssi: number | null
   wifi_status: string | null
+  board_type: 'esp32' | 'arduino_uno_r4'
   temp_threshold_low: number | null
   temp_threshold_high: number | null
 }
@@ -61,8 +64,15 @@ export interface DeviceDetail extends Device {
   water_schedules: WaterSchedule[]
 }
 
+export interface RelayPreset {
+  gpio_pin: number
+  active_level: 'LOW' | 'HIGH'
+  pwm: boolean
+}
+
 export interface RelayConfig {
   relay_name: string
+  relay_type: RelayType
   gpio_pin: number
   active_level: 'LOW' | 'HIGH'
   default_state: 'on' | 'off'
@@ -74,11 +84,17 @@ export interface RelayConfig {
 
 export interface RelayConfigWrite {
   relay_name: string
+  relay_type: RelayType
   gpio_pin: number
   active_level: 'LOW' | 'HIGH'
   default_state: 'on' | 'off'
   fail_safe_default: 'on' | 'off'
   cutoff_ceiling_seconds: number | null
+}
+
+export interface RelayPresets {
+  presets: Record<RelayType, RelayPreset>
+  safe_pins: Record<'esp32' | 'arduino_uno_r4', number[]>
 }
 
 export interface DeviceRelayConfig {
@@ -116,7 +132,7 @@ export interface TelemetryPoint {
   time: string
   device_id: string
   temperature: number | null
-  humidity: number | null
+  tds: number | null
   pressure: number | null
   metadata: Record<string, unknown> | null
 }
@@ -137,7 +153,7 @@ export interface HourlySummaryPoint {
   hour: string
   device_id: string
   temperature: HourlyStat | null
-  humidity: HourlyStat | null
+  tds: HourlyStat | null
   sample_count: number
 }
 

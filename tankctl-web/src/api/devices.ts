@@ -27,10 +27,10 @@ export function useDeviceDetail(deviceId: string) {
 export function useRegisterDevice() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (deviceId: string) =>
+    mutationFn: (body: { device_id: string; board_type?: 'esp32' | 'arduino_uno_r4' }) =>
       api.post<{ device_id: string; device_secret: string; mqtt_password: string; status: string }>(
         '/devices',
-        { device_id: deviceId },
+        body,
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: deviceKeys.all }),
   })

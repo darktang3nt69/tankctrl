@@ -1,11 +1,27 @@
 import { useState } from 'react'
+import { AlertTriangle, CheckCircle2, Info, Lightbulb, PlusCircle, Terminal, WifiOff, Wifi, XCircle } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { useDevices } from '../api/devices'
 import { useDismissAttention, useEventTypes, useEvents } from '../api/events'
 import { EmptyState } from '../components/EmptyState'
 import { Button } from '../components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { StatusIcon } from '../components/ui/status-icon'
 import { eventLabel } from '../lib/eventLabels'
+import { formatDateTime } from '../lib/date'
+
+const EVENT_ICON: Record<string, { icon: LucideIcon; state: 'on' | 'off' | 'online' | 'offline' | 'warn' }> = {
+  device_registered: { icon: PlusCircle, state: 'online' },
+  device_online: { icon: Wifi, state: 'online' },
+  device_offline: { icon: WifiOff, state: 'offline' },
+  command_sent: { icon: Terminal, state: 'on' },
+  command_executed: { icon: CheckCircle2, state: 'online' },
+  command_failed: { icon: XCircle, state: 'offline' },
+  light_state_changed: { icon: Lightbulb, state: 'on' },
+  device_warning: { icon: AlertTriangle, state: 'warn' },
+}
+const DEFAULT_EVENT_ICON = { icon: Info, state: 'off' as const }
 
 export function Alerts() {
   const [deviceFilter, setDeviceFilter] = useState('')
@@ -66,14 +82,15 @@ export function Alerts() {
             const meta = e.metadata as Record<string, unknown>
             const code = e.event === 'device_warning' && typeof meta.code === 'string' ? meta.code : null
             return (
-              <div key={i} className="flex items-center justify-between gap-4 px-4 py-3">
-                <div className="flex flex-col gap-0.5">
+              <div key={i} className="flex items-center gap-3 px-4 py-3">
+                <StatusIcon icon={(EVENT_ICON[e.event] ?? DEFAULT_EVENT_ICON).icon} state={(EVENT_ICON[e.event] ?? DEFAULT_EVENT_ICON).state} className="size-8 shrink-0" />
+                <div className="flex flex-1 flex-col gap-0.5">
                   <span className="font-medium">
                     {eventLabel(e.event)}
                     {code && <span className="ml-1.5 font-mono text-xs text-muted-foreground">({code})</span>}
                   </span>
                   <span className="font-mono text-xs text-muted-foreground">
-                    {new Date(e.timestamp * 1000).toLocaleString()} · {deviceLabel(e.device_id)}
+                    {formatDateTime(new Date(e.timestamp * 1000))} · {deviceLabel(e.device_id)}
                     {typeof meta.message === 'string' ? ` · ${meta.message}` : ''}
                   </span>
                 </div>

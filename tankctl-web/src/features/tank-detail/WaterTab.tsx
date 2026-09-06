@@ -93,6 +93,7 @@ export function WaterTab({ deviceId }: { deviceId: string }) {
       {mode === 'log-now' && (
         <WaterScheduleForm
           initial={logNowDefaults}
+          quickLog
           submitting={createSchedule.isPending}
           onCancel={closeForm}
           onSubmit={(body) =>

@@ -1,8 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
-import type { DeviceRelayConfig, RelayConfig, RelayConfigWrite } from './types'
+import type { DeviceRelayConfig, RelayConfig, RelayConfigWrite, RelayPresets } from './types'
 
 const key = (deviceId: string) => ['device', deviceId, 'relays'] as const
+const presetsKey = () => ['relay', 'presets'] as const
+
+export function useRelayPresets() {
+  return useQuery({
+    queryKey: presetsKey(),
+    queryFn: () => api.get<RelayPresets>('/relay-presets'),
+  })
+}
 
 export function useRelays(deviceId: string) {
   return useQuery({

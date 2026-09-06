@@ -37,6 +37,15 @@ export function Sparkline({ data, color }: { data: SparklineDatum[]; color: stri
           <TooltipContent>{c.d.value.toFixed(1)}°C</TooltipContent>
         </Tooltip>
       ))}
+      <circle
+        cx={last.x}
+        cy={last.y}
+        r={3}
+        fill="none"
+        stroke={color}
+        strokeWidth={1.5}
+        className="origin-center animate-ping [transform-box:fill-box] motion-reduce:hidden"
+      />
       <Tooltip>
         <TooltipTrigger asChild>
           <circle

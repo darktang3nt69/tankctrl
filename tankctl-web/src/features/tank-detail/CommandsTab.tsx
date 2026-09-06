@@ -2,6 +2,7 @@ import { useCommandHistory } from '../../api/commands'
 import { EmptyState } from '../../components/EmptyState'
 import { Badge } from '../../components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table'
+import { formatDateTime } from '../../lib/date'
 
 const STATUS_LABEL: Record<string, string> = {
   pending: 'Pending',
@@ -41,7 +42,7 @@ export function CommandsTab({ deviceId }: { deviceId: string }) {
         <TableBody>
           {data.commands.map((c) => (
             <TableRow key={c.command_id ?? `${c.command}-${c.version}`}>
-              <TableCell className="font-mono">{c.created_at ? new Date(c.created_at).toLocaleString() : '—'}</TableCell>
+              <TableCell className="font-mono">{c.created_at ? formatDateTime(new Date(c.created_at)) : '—'}</TableCell>
               <TableCell>{c.command}</TableCell>
               <TableCell className="font-mono">{c.value ?? '—'}</TableCell>
               <TableCell>

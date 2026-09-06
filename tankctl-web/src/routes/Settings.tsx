@@ -1,39 +1,42 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { toast } from 'sonner'
-import { useDevices, useRegisterDevice } from '../api/devices'
+import { Wifi, WifiOff } from 'lucide-react'
+import { useDevices } from '../api/devices'
 import { Button } from '../components/ui/button'
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '../components/ui/form'
-import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
+import { StatusIcon } from '../components/ui/status-icon'
+import { getTimezone, setTimezone, getAccentColor, setAccentColor, DEFAULT_ACCENT } from '../lib/preferences'
 
-const registerSchema = z.object({
-  deviceId: z
-    .string()
-    .min(1, 'Device ID is required')
-    .regex(/^[a-zA-Z0-9_-]+$/, 'Alphanumeric, underscore, hyphen only'),
-})
+const ACCENT_PRESETS = [
+  { label: 'Amber', hex: DEFAULT_ACCENT },
+  { label: 'Purple', hex: '#9333ea' },
+  { label: 'Blue', hex: '#2563eb' },
+  { label: 'Green', hex: '#16a34a' },
+  { label: 'Rose', hex: '#e11d48' },
+]
+
+const TIMEZONES = (() => {
+  try {
+    return Intl.supportedValuesOf('timeZone')
+  } catch {
+    return [Intl.DateTimeFormat().resolvedOptions().timeZone]
+  }
+})()
 
 export function Settings() {
   const { data: devices } = useDevices()
-  const registerDevice = useRegisterDevice()
-  const [secret, setSecret] = useState<{ device_secret: string; mqtt_password: string } | null>(null)
+  const [timezone, setTimezoneState] = useState(getTimezone)
+  const [accent, setAccentState] = useState(getAccentColor)
 
-  const form = useForm<z.infer<typeof registerSchema>>({
-    resolver: zodResolver(registerSchema),
-    defaultValues: { deviceId: '' },
-  })
+  function handleTimezoneChange(tz: string) {
+    setTimezone(tz)
+    setTimezoneState(tz)
+  }
 
-  function onSubmit(values: z.infer<typeof registerSchema>) {
-    registerDevice.mutate(values.deviceId, {
-      onSuccess: (res) => {
-        setSecret({ device_secret: res.device_secret, mqtt_password: res.mqtt_password })
-        form.reset()
-      },
-      onError: () => toast.error("Failed to register device — is the id already taken?"),
-    })
+  function handleAccentChange(hex: string) {
+    setAccentColor(hex)
+    setAccentState(hex)
   }
 
   return (
@@ -41,51 +44,69 @@ export function Settings() {
       <h1 className="mb-5 text-2xl font-bold tracking-tight">Settings</h1>
 
       <section className="mb-6 rounded-lg border bg-card p-5">
-        <h3 className="mb-4 font-semibold">Register a device</h3>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="deviceId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Device ID</FormLabel>
-                  <FormControl>
-                    <Input placeholder="tank1" {...field} />
-                  </FormControl>
-                  <FormDescription>Alphanumeric, underscore, hyphen only.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button type="submit" disabled={registerDevice.isPending}>
-              Register
-            </Button>
-          </form>
-        </Form>
-
-        {secret && (
-          <div role="alert" className="mt-4 rounded-md border border-[var(--warn)] bg-[var(--warn-fill)] p-3">
-            <p className="mb-2 text-sm font-medium">Copy these now — they will not be shown again.</p>
-            <p className="font-mono text-sm">device_secret: {secret.device_secret}</p>
-            <p className="font-mono text-sm">mqtt_password: {secret.mqtt_password}</p>
+        <h3 className="mb-4 font-semibold">Appearance & locale</h3>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="settings-timezone">Timezone</Label>
+            <Select value={timezone} onValueChange={handleTimezoneChange}>
+              <SelectTrigger id="settings-timezone" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-64">
+                {TIMEZONES.map((tz) => (
+                  <SelectItem key={tz} value={tz}>
+                    {tz}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Used to format dates and times throughout the app.</p>
           </div>
-        )}
+
+          <div className="space-y-1.5">
+            <Label>Accent color</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              {ACCENT_PRESETS.map((preset) => (
+                <button
+                  key={preset.hex}
+                  type="button"
+                  aria-label={preset.label}
+                  aria-pressed={accent === preset.hex}
+                  onClick={() => handleAccentChange(preset.hex)}
+                  className="size-7 rounded-full border-2 cursor-pointer transition-transform hover:scale-110"
+                  style={{ backgroundColor: preset.hex, borderColor: accent === preset.hex ? 'var(--foreground)' : 'transparent' }}
+                />
+              ))}
+              <input
+                type="color"
+                aria-label="Custom accent color"
+                value={accent}
+                onChange={(e) => handleAccentChange(e.target.value)}
+                className="size-7 cursor-pointer rounded-full border-none bg-transparent p-0"
+              />
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="rounded-lg border bg-card p-5">
         <h3 className="mb-4 font-semibold">Devices</h3>
         {(devices ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground">No devices registered yet.</p>
+          <p className="text-sm text-muted-foreground">No devices registered yet — use the + button to add one.</p>
         ) : (
           <ul className="divide-y">
             {(devices ?? []).map((d) => (
-              <li key={d.device_id} className="flex items-center justify-between gap-4 py-3">
+              <li key={d.device_id} className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-muted/40">
+                <StatusIcon
+                  icon={d.status === 'online' ? Wifi : WifiOff}
+                  state={d.status === 'online' ? 'online' : 'offline'}
+                  className="size-8 shrink-0"
+                />
                 <div className="flex flex-col gap-0.5">
                   <span className="font-medium">{d.device_name ?? d.device_id}</span>
                   <span className="font-mono text-xs text-muted-foreground">{d.device_id}</span>
                 </div>
-                <Button asChild variant="outline" size="sm">
+                <Button asChild variant="outline" size="sm" className="ml-auto">
                   <Link to={`/tanks/${d.device_id}?tab=relays`}>Configure relays</Link>
                 </Button>
               </li>

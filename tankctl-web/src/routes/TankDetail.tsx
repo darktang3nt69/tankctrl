@@ -7,13 +7,24 @@ import { LineChart } from '../components/LineChart'
 import { Tabs } from '../components/Tabs'
 import { EmptyState } from '../components/EmptyState'
 import { Button } from '../components/ui/button'
+import { Calendar } from '../components/ui/calendar'
+import { Input } from '../components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { useTankTelemetry } from '../features/tank-detail/useTankTelemetry'
-import type { ChartRange } from '../api/telemetry'
+import type { ChartRange, DateRange } from '../api/telemetry'
+import type { DateRange as PickerDateRange } from 'react-day-picker'
 import { LightTab } from '../features/tank-detail/LightTab'
 import { RelaysTab } from '../features/tank-detail/RelaysTab'
 import { WaterTab } from '../features/tank-detail/WaterTab'
 import { CommandsTab } from '../features/tank-detail/CommandsTab'
 import { IconCommands, IconLight, IconRelay, IconWater } from '../components/icons'
+import { formatDate, formatTime, formatDateTime } from '../lib/date'
+
+const PRESETS: { id: ChartRange; label: string }[] = [
+  { id: 'live', label: 'Live' },
+  { id: '7d', label: '7d' },
+  { id: '30d', label: '30d' },
+]
 
 const TABS = [
   { id: 'light', label: 'Light', Icon: IconLight },
@@ -47,9 +58,13 @@ export function TankDetail() {
   const { deviceId } = useParams<{ deviceId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const [range, setRange] = useState<ChartRange>('live')
+  const [customRange, setCustomRange] = useState<DateRange | undefined>()
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [draftRange, setDraftRange] = useState<PickerDateRange>({ from: undefined, to: undefined })
+  const [draftTime, setDraftTime] = useState({ from: '00:00', to: '23:59' })
 
   const { data: device, isLoading, isError } = useDeviceDetail(deviceId ?? '')
-  const telemetry = useTankTelemetry(deviceId ?? '', range)
+  const telemetry = useTankTelemetry(deviceId ?? '', range, customRange)
   const relativeLastSeen = useRelativeTime(device?.last_seen)
 
   const activeTab = searchParams.get('tab') ?? window.localStorage.getItem(LAST_TAB_KEY) ?? 'light'
@@ -80,7 +95,7 @@ export function TankDetail() {
   }
 
   const lastTemp = telemetry.temp.at(-1)
-  const lastHumidity = telemetry.humidity.at(-1)
+  const lastTds = telemetry.tds.at(-1)
 
   return (
     <div>
@@ -100,8 +115,8 @@ export function TankDetail() {
 
         <div className="mt-4 grid grid-cols-3 gap-3">
           <StatTile label="Water temperature" value={lastTemp ? lastTemp.value.toFixed(1) : '—'} unit="°C" />
-          <StatTile label="Humidity" value={lastHumidity ? lastHumidity.value.toFixed(1) : '—'} unit="%" />
-          <StatTile label="Last seen" value={device.last_seen ? new Date(device.last_seen).toLocaleTimeString() : '—'} />
+          <StatTile label="TDS" value={lastTds ? lastTds.value.toFixed(0) : '—'} unit="ppm" />
+          <StatTile label="Last seen" value={device.last_seen ? formatTime(new Date(device.last_seen)) : '—'} />
         </div>
       </div>
 
@@ -111,19 +126,88 @@ export function TankDetail() {
         </div>
       )}
 
-      <div className="mb-4 flex gap-1 rounded-md border bg-muted p-1" role="group" aria-label="Time range">
-        {(['live', '7d', '30d'] as ChartRange[]).map((r) => (
-          <Button
-            key={r}
-            type="button"
-            variant={range === r ? 'default' : 'ghost'}
-            size="sm"
-            aria-pressed={range === r}
-            onClick={() => setRange(r)}
-          >
-            {r === 'live' ? 'Live' : r}
-          </Button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="Time range">
+        <div className="flex gap-1 rounded-md border bg-muted p-1">
+          {PRESETS.map((p) => (
+            <Button
+              key={p.id}
+              type="button"
+              variant={range === p.id ? 'default' : 'ghost'}
+              size="sm"
+              aria-pressed={range === p.id}
+              onClick={() => setRange(p.id)}
+            >
+              {p.label}
+            </Button>
+          ))}
+        </div>
+        <Popover open={pickerOpen} onOpenChange={(open) => {
+          setPickerOpen(open)
+          if (open) {
+            setDraftRange(customRange ? { from: customRange.from, to: customRange.to } : { from: undefined, to: undefined })
+            setDraftTime({ from: '00:00', to: '23:59' })
+          }
+        }}>
+          <PopoverTrigger asChild>
+            <Button type="button" variant={range === 'custom' ? 'default' : 'outline'} size="sm">
+              {range === 'custom' && customRange ? (() => {
+                const hasNonDefaultTimes = (
+                  (customRange.from && (customRange.from.getHours() !== 0 || customRange.from.getMinutes() !== 0)) ||
+                  (customRange.to && (customRange.to.getHours() !== 23 || customRange.to.getMinutes() !== 59))
+                )
+                return hasNonDefaultTimes
+                  ? `${formatDateTime(customRange.from)} – ${formatDateTime(customRange.to)}`
+                  : `${formatDate(customRange.from)} – ${formatDate(customRange.to)}`
+              })() : 'Custom range'}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-auto p-0">
+            <Calendar
+              mode="range"
+              numberOfMonths={2}
+              selected={draftRange}
+              onSelect={(next) => setDraftRange(next ?? { from: undefined, to: undefined })}
+              className="max-w-[560px]"
+            />
+            <div className="space-y-2 border-t p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">From</label>
+                  <Input type="time" value={draftTime.from} onChange={(e) => setDraftTime({ ...draftTime, from: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">To</label>
+                  <Input type="time" value={draftTime.to} onChange={(e) => setDraftTime({ ...draftTime, to: e.target.value })} />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t p-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setPickerOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!draftRange.from || !draftRange.to}
+                onClick={() => {
+                  if (!draftRange.from || !draftRange.to) return
+                  // Parse time strings and apply to dates
+                  const [fromHours, fromMinutes] = draftTime.from.split(':').map(Number)
+                  const [toHours, toMinutes] = draftTime.to.split(':').map(Number)
+                  const from = new Date(draftRange.from)
+                  from.setHours(fromHours, fromMinutes, 0, 0)
+                  const to = new Date(draftRange.to)
+                  to.setHours(toHours, toMinutes, 0, 0)
+                  setCustomRange({ from, to })
+                  setRange('custom')
+                  setPickerOpen(false)
+                }}
+              >
+                Apply
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="mb-4 rounded-lg border bg-card p-4">
@@ -144,18 +228,18 @@ export function TankDetail() {
       </div>
 
       <div className="mb-4 rounded-lg border bg-card p-4">
-        <h3 className="mb-3 text-sm font-semibold">Humidity</h3>
+        <h3 className="mb-3 text-sm font-semibold">TDS</h3>
         {telemetry.isLoading ? (
           <p className="text-sm text-muted-foreground">Loading chart…</p>
         ) : (
           <LineChart
-            data={telemetry.humidity}
-            unit="%"
-            color="var(--series-humid)"
-            fillColor="var(--series-humid-fill)"
+            data={telemetry.tds}
+            unit="ppm"
+            color="var(--series-tds)"
+            fillColor="var(--series-tds-fill)"
             stale={telemetry.stale}
             dayTicks={telemetry.dayTicks}
-            ariaLabel="Humidity over time"
+            ariaLabel="TDS over time"
           />
         )}
       </div>
@@ -164,7 +248,7 @@ export function TankDetail() {
         <Tabs tabs={TABS} activeId={activeTab} onChange={handleTabChange} />
         <div className="mt-4">
           {activeTab === 'light' && <LightTab key={deviceId} deviceId={deviceId} lightSchedule={device.light_schedule} />}
-          {activeTab === 'relays' && <RelaysTab key={deviceId} deviceId={deviceId} />}
+          {activeTab === 'relays' && <RelaysTab key={deviceId} deviceId={deviceId} boardType={device.board_type} />}
           {activeTab === 'water' && <WaterTab key={deviceId} deviceId={deviceId} />}
           {activeTab === 'commands' && <CommandsTab key={deviceId} deviceId={deviceId} />}
         </div>
